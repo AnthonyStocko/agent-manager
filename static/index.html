@@ -22,9 +22,16 @@
   <div class="card">
     <div id="chat-log"></div>
     <form id="chat-form">
-      <textarea id="chat-input" rows="2" placeholder="Demande-moi quelque chose : « cherche de nouvelles offres », « prépare ma candidature pour l'offre 12 », « qu'ai-je de prévu demain ? »"></textarea>
+      <div class="attach">
+        <button type="button" id="btn-file" title="Joindre un fichier" aria-label="Joindre un fichier">📎</button>
+        <button type="button" id="btn-photo" title="Prendre une photo" aria-label="Prendre une photo">📷</button>
+        <input id="in-file" type="file" hidden>
+        <input id="in-photo" type="file" accept="image/*" capture="environment" hidden>
+      </div>
+      <textarea id="chat-input" rows="2" placeholder="Demande-moi quelque chose : « cherche de nouvelles offres », « prépare ma candidature pour l'offre 12 », « qu'ai-je de prévu demain ? ». Une photo de ticket seule devient une dépense."></textarea>
       <button class="primary" id="chat-send">Envoyer</button>
     </form>
+    <div id="chip" class="chip" hidden><span id="chip-name"></span> <button type="button" id="chip-remove" aria-label="Retirer la pièce jointe">×</button></div>
     <div class="toolbar"><button id="chat-clear" type="button">Effacer la discussion</button></div>
   </div>
 </section>

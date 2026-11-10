@@ -58,3 +58,6 @@ label { display:block; margin:10px 0; font-size:13px; color:var(--mute); } label
 .mem:first-of-type { border-top:0; } .mem small { color:var(--mute); }
 .mem button { padding:4px 8px; font-size:13px; }
 ul.plain { padding-left:18px; margin:6px 0; }
+.attach { display:flex; flex-direction:column; gap:6px; } .attach button { padding:6px 10px; font-size:18px; line-height:1; }
+.chip { display:inline-flex; align-items:center; gap:6px; margin-top:8px; padding:4px 10px; border:1px solid var(--line); border-radius:99px; font-size:13px; max-width:100%; }
+.chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .chip button { border:0; padding:0 4px; font-size:16px; }

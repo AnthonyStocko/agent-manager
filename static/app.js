@@ -59,14 +59,57 @@ async function loadChat() {
   if (!r.messages.length) addMessage({ role: "assistant", content: "Bonjour. Je coordonne tes agents et je retiens ce que j'apprends de toi. Que veux-tu faire ?" });
   r.messages.forEach(addMessage);
 }
+// Pièce jointe : un fichier choisi ou une photo prise avec l'appareil du téléphone
+let attachment = null;   // { name, mime, data (base64) }
+function readBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(new Error("Lecture du fichier impossible."));
+    r.readAsDataURL(blob);
+  });
+}
+// Une photo de téléphone pèse souvent plus de 5 Mo : on la réduit avant l'envoi (2000 px au plus)
+async function shrinkImage(file) {
+  try {
+    const img = await createImageBitmap(file);
+    const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
+    if (scale === 1 && file.size < 3e6) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.85));
+    return blob ? new File([blob], file.name.replace(/\.[^.]*$/, "") + ".jpg", { type: "image/jpeg" }) : file;
+  } catch { return file; }
+}
+async function pickFile(input) {
+  let file = input.files[0]; input.value = "";
+  if (!file) return;
+  try {
+    if (file.type.startsWith("image/")) file = await shrinkImage(file);
+    if (file.size > 10e6) return toast("Fichier trop lourd (10 Mo au plus).");
+    attachment = { name: file.name || "photo.jpg", mime: file.type || "application/octet-stream", data: await readBase64(file) };
+    $("#chip-name").textContent = "📎 " + attachment.name; $("#chip").hidden = false;
+    $("#chat-input").focus();
+  } catch (er) { toast(er.message); }
+}
+$("#btn-file").onclick = () => $("#in-file").click();
+$("#btn-photo").onclick = () => $("#in-photo").click();
+$("#in-file").onchange = (e) => pickFile(e.target);
+$("#in-photo").onchange = (e) => pickFile(e.target);
+function clearAttachment() { attachment = null; $("#chip").hidden = true; }
+$("#chip-remove").onclick = clearAttachment;
+
 $("#chat-form").onsubmit = async (e) => {
   e.preventDefault();
-  const text = $("#chat-input").value.trim(); if (!text) return;
-  $("#chat-input").value = ""; addMessage({ role: "user", content: text });
+  const text = $("#chat-input").value.trim(), file = attachment;
+  if (!text && !file) return;
+  $("#chat-input").value = ""; clearAttachment();
+  addMessage({ role: "user", content: (text + (file ? `\n[pièce jointe : ${file.name}]` : "")).trim() });
   const wait = addMessage({ role: "assistant", content: "Je m'en occupe… (une recherche d'offres peut prendre plusieurs minutes)" });
   const btn = $("#chat-send"); btn.disabled = true;
   try {
-    const r = await api("/api/chat", { message: text });
+    const r = await api("/api/chat", file ? { message: text, file } : { message: text });
     wait.remove(); addMessage({ role: "assistant", content: r.answer, agent: r.agent });
     if (r.remembered) toast("Noté dans ma mémoire.");
   } catch (er) { wait.remove(); addMessage({ role: "assistant", content: "Erreur : " + er.message }); }

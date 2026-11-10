@@ -1,4 +1,5 @@
 """L'agent chef : point d'entrée unique (chat), tableau de bord et initiatives du matin."""
+import base64
 import datetime
 import json
 import re
@@ -8,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import agents
 import db
+import files
 import llm
 import memory
 
@@ -63,6 +65,20 @@ YES = re.compile(r"^\W*(oui|ok|okay|d'accord|dac|confirme[rz]?|je confirme|vas[-
 NO = re.compile(r"^\W*(non|annule[rz]?|stop|laisse tomber|no)\b", re.I)
 
 
+_held = {"file": None, "at": 0.0}   # pièce jointe en attente : en mémoire seulement, jamais sur le disque
+
+
+def _hold(file):
+    _held.update(file=file, at=time.time())
+
+
+def _held_file():
+    if _held["file"] and time.time() - _held["at"] < PENDING_MINUTES * 60:
+        return _held["file"]
+    _held["file"] = None
+    return None
+
+
 def _pending(key):
     """État en attente côté agent perso (question posée ou action à confirmer), s'il est encore valable."""
     try:
@@ -108,8 +124,10 @@ def _perso_reply(res, text):
         if status == "fait":
             parts.append(f"**{title}**\n{_perso_result(a.get('resultat'))}")
         elif status == "a_confirmer":
-            tokens.append({"jeton": a.get("jeton"), "resume": str(a.get("resume") or title)})
-            parts.append(f"**{title}** — à confirmer :\n{a.get('resume') or ''}")
+            attach = a.get("fonction") == "creer_brouillon" and _held_file() is not None
+            tokens.append({"jeton": a.get("jeton"), "resume": str(a.get("resume") or title), "attach": attach})
+            parts.append(f"**{title}** — à confirmer :\n{a.get('resume') or ''}"
+                         + (f"\nPièce jointe : {_held_file()['name']}" if attach else ""))
         elif status == "info_manquante":
             questions.append(str(a.get("question") or ""))
             parts.append(f"**{title}** — il me manque une information : {a.get('question') or ''}")
@@ -129,13 +147,44 @@ def _perso_confirm(state, confirmed):
     perso, lines = agents.Perso(), []
     for t in state.get("tokens", []):
         try:
-            r = perso.confirm(t["jeton"], confirmed)
+            if confirmed and t.get("attach"):
+                if not _held_file():
+                    lines.append(f"Pièce jointe expirée, rien n'a été fait : renvoie ta demande avec le document ({t['resume']}).")
+                    perso.confirm(t["jeton"], False)
+                    continue
+                r = perso.confirm_draft(t["jeton"], _held_file())
+            else:
+                r = perso.confirm(t["jeton"], confirmed)
             lines.append(f"Annulé : {t['resume']}" if r.get("statut") == "annule"
                          else f"**Fait.** {_perso_result(r.get('resultat'))}")
         except agents.AgentError as e:
             lines.append(f"Échec ({t['resume']}) : {e}")
     _set_pending("perso_confirm", None)
+    _held["file"] = None
     return "\n\n".join(lines) or "Rien à confirmer."
+
+
+def _expense_preview(file, sentence):
+    """Photo d'un ticket : agent-perso lit la dépense, on demande confirmation avant d'écrire."""
+    p = agents.Perso().receipt(file, sentence)
+    _set_pending("perso_expense", {"preview": p})
+    return (f"**Dépense lue sur le ticket** — à confirmer :\n- Montant : {p.get('amount_display') or p.get('amount')}\n"
+            f"- Motif : {p.get('motif')}\n- Date : {p.get('date_display') or p.get('date')}\n"
+            f"- Payée par : {p.get('person')}\n- Emplacement : {p.get('range')}\n\n"
+            "Réponds **oui** pour l'enregistrer, **non** pour annuler. Si un champ est faux, réponds non "
+            "et renvoie la photo avec la correction en une phrase.")
+
+
+def _expense_confirm(state, confirmed):
+    _set_pending("perso_expense", None)
+    if not confirmed:
+        return "Dépense annulée, rien n'a été enregistré."
+    p = state["preview"]
+    try:
+        agents.Perso().confirm_expense(p)
+    except agents.AgentError as e:
+        return f"La dépense n'a pas été enregistrée : {e}"
+    return f"**Dépense enregistrée** : {p.get('amount_display') or p.get('amount')} — {p.get('motif')} ({p.get('person')})."
 
 
 ROUTER = """Tu es l'agent chef de cette personne : son point d'entrée unique. Tu la connais grâce à ta
@@ -151,6 +200,8 @@ AGENTS DISPONIBLES :
 {emploi}
 
 QUESTION EN ATTENTE DE L'AGENT PERSO : {question}
+
+PIÈCE JOINTE AU MESSAGE : {attachment}
 
 CONVERSATION RÉCENTE :
 {history}
@@ -172,6 +223,13 @@ Actions :
   en attente de l'agent perso et que le message y répond, choisis "perso" et mets dans
   "demande_perso" la réponse telle quelle. C'est lui qui enregistre les dépenses et crée les tâches :
   ne réponds jamais toi-même que c'est impossible.
+- "perso_ticket" : la pièce jointe est la photo d'un ticket ou d'une facture à enregistrer en dépense ;
+  mets dans "demande_perso" les précisions données (qui a payé, motif), sinon une chaîne vide.
+- "emploi_cv" : la pièce jointe est un CV à ajouter au profil de recherche d'emploi.
+- "emploi_annonce" : la pièce jointe est une offre d'emploi (document texte) à ajouter aux offres suivies.
+Avec une pièce jointe et une demande de mail, choisis "perso" : le document sera joint au brouillon au
+moment de la confirmation. Tu ne vois pas le contenu de la pièce jointe : ne le devine pas, et si son
+usage n'est pas clair, demande-le avec "repondre" (elle reste disponible quelques minutes).
 N'utilise un agent que s'il est marqué disponible ; sinon explique dans "reponse" ce qu'il faut configurer.
 
 "a_retenir" : liste (souvent vide) des informations durables que la personne vient de donner sur
@@ -179,19 +237,42 @@ elle-même, ses goûts, ses objectifs ou sa façon de travailler. Uniquement ce 
 mot ou presque. Rien sur des tiers, rien de sensible (santé, opinions, finances)."""
 
 
-def chat(message):
+def _direct(message, shown, answer, agent):
+    _save("user", shown)
+    _save("assistant", answer, agent)
+    return {"answer": answer, "agent": agent, "remembered": 0}
+
+
+def chat(message, file=None):
     message = str(message or "").strip()[:6000]
-    if not message:
+    file = files.decode(file)
+    if not message and not file:
         raise ValueError("Message vide.")
+    shown = (message + f"\n[pièce jointe : {file['name']}]").strip() if file else message
     # Réponse à une demande de confirmation de l'agent perso : traitée sans passer par le modèle
-    confirm = _pending("perso_confirm")
-    if confirm and (YES.match(message) or NO.match(message)):
-        answer = _perso_confirm(confirm, bool(YES.match(message)))
-        _save("user", message)
-        _save("assistant", answer, "perso")
-        return {"answer": answer, "agent": "perso", "remembered": 0}
+    expense, confirm = _pending("perso_expense"), _pending("perso_confirm")
+    if not file and (YES.match(message) or NO.match(message)):
+        if expense:
+            return _direct(message, shown, _expense_confirm(expense, bool(YES.match(message))), "perso")
+        if confirm:
+            return _direct(message, shown, _perso_confirm(confirm, bool(YES.match(message))), "perso")
+    if expense:
+        _set_pending("perso_expense", None)  # autre sujet : l'action en attente est abandonnée
     if confirm:
-        _set_pending("perso_confirm", None)  # autre sujet : l'action en attente est abandonnée
+        _set_pending("perso_confirm", None)
+    if file:
+        _hold(file)
+        if not message:
+            # Sans un mot : une photo est un ticket de dépense ; pour un document, on demande quoi en faire
+            if files.is_image(file):
+                try:
+                    return _direct(message, shown, _expense_preview(file, ""), "perso")
+                except agents.AgentError as e:
+                    return _direct(message, shown, f"Je n'ai pas pu lire le ticket avec l'agent perso : {e}", "perso")
+            return _direct(message, shown, (
+                f"J'ai bien reçu « {file['name']} ». Que veux-tu en faire ?\n- l'ajouter à ton profil comme CV\n"
+                "- l'ajouter à tes offres d'emploi suivies\n- le joindre à un mail (dis-moi à qui et pour quoi)"), "")
+    file = _held_file()
     question = _pending("perso_question")
     past = history(HISTORY)
     emploi, perso = agents.Emploi(), agents.Perso()
@@ -210,6 +291,7 @@ def chat(message):
                          f"{'disponible' if a.configured else 'NON CONFIGURÉ'}" for a in (emploi, perso)),
         emploi=state,
         question=question["question"] if question else "(aucune)",
+        attachment=(f"{file['name']} ({'image' if files.is_image(file) else 'document'})" if file else "(aucune)"),
         history="\n".join(f"{'Elle' if m['role'] == 'user' else 'Toi'} : {m['content'][:700]}"
                           for m in past) or "(début de conversation)",
         message=message))
@@ -236,6 +318,34 @@ def chat(message):
             docs = emploi.generate(int(plan.get("offer_id")))
             answer = ("CV et lettre générés, à relire et modifier dans l'agent emploi "
                       f"({emploi.url}).\n\nLettre :\n\n{docs.get('letter_md', '')}")
+        elif action in ("perso_ticket", "emploi_cv", "emploi_annonce") and not file:
+            answer = "Je n'ai pas reçu de pièce jointe : renvoie-la avec ta demande."
+        elif action == "perso_ticket":
+            agent_used = "perso"
+            if not files.is_image(file):
+                answer = "Pour lire un ticket, il me faut une photo (image), pas un document."
+            else:
+                answer = _expense_preview(file, str(plan.get("demande_perso") or ""))
+                _held["file"] = None
+        elif action == "emploi_cv":
+            agent_used = "emploi"
+            r = emploi.import_cv(file["name"], base64.b64encode(file["data"]).decode())
+            _held["file"] = None
+            answer = (f"CV ajouté à ton profil dans l'agent emploi.\n\n{r.get('resume') or ''}\n\n"
+                      f"Postes recherchés : {r.get('keywords') or '?'}")
+            if r.get("a_verifier"):
+                answer += "\n\nÀ vérifier dans tes CV :\n" + "\n".join("- " + x for x in r["a_verifier"])
+        elif action == "emploi_annonce":
+            agent_used = "emploi"
+            if files.is_image(file):
+                answer = ("Je ne sais pas encore lire une annonce en photo : envoie-la en PDF, "
+                          "ou colle son texte ou son lien.")
+            else:
+                r = emploi.add_offer(files.extract_text(file["name"], file["data"]))
+                _held["file"] = None
+                _summary_cache["value"] = None
+                answer = ("Offre ajoutée à ton suivi. Dis « note les nouvelles offres » ou ouvre l'agent emploi "
+                          "pour la noter." if r.get("new") else "Cette offre est déjà dans ton suivi.")
         elif action == "perso":
             agent_used = "perso"
             text = str(plan.get("demande_perso") or message)
@@ -243,10 +353,12 @@ def chat(message):
             answer = _perso_reply(perso.assistant(text, question["text"] if question else ""), text)
     except agents.AgentError as e:
         answer = f"Je n'ai pas pu joindre l'agent {agent_used} : {e}"
+    except files.ImportError_ as e:
+        answer = str(e)
     except (TypeError, ValueError):
         answer = "Je n'ai pas compris de quelle offre tu parles : donne-moi son numéro ou son intitulé."
     answer = answer or "Je n'ai pas de réponse à cette demande."
-    _save("user", message)
+    _save("user", shown)
     _save("assistant", answer, agent_used)
     facts = [str(x).strip() for x in (plan.get("a_retenir") or []) if str(x).strip()][:5]
     if facts:

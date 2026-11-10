@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import agents
 import chef
 import db
+import files
 import llm
 import memory
 
@@ -48,7 +49,7 @@ def api_get(path, query):
 
 def api_post(path, body):
     if path == "/api/chat":
-        return chef.chat(body.get("message"))
+        return chef.chat(body.get("message"), body.get("file"))
     if path == "/api/chat/clear":
         db.run("DELETE FROM messages")
         return {"ok": True}
@@ -223,7 +224,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, fn(*args))
         except ApiError as e:
             self._send(e.code, {"error": str(e)})
-        except (llm.LLMError, agents.AgentError, ValueError) as e:
+        except (llm.LLMError, agents.AgentError, files.ImportError_, ValueError) as e:
             self._send(400, {"error": str(e)})
         except Exception as e:
             print(f"Erreur interne : {e!r}", flush=True)
@@ -232,7 +233,7 @@ class Handler(BaseHTTPRequestHandler):
     def _body(self):
         try:
             length = int(self.headers.get("Content-Length") or 0)
-            if length > 2_000_000:
+            if length > 15_000_000:
                 raise ValueError
             body = json.loads(self.rfile.read(length) or b"{}")
             if not isinstance(body, dict):

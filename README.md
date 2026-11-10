@@ -17,6 +17,20 @@ L'agent qui chapeaute les autres. Quatre rôles :
 | agent-perso | lui transmettre toute demande par sa zone de saisie unique (`/assistant`) : dépenses, tâches, mails, agenda, planning ; confirmation par « oui » / « non » avant toute écriture | sans modification d'agent-perso ; pas encore de mémoire partagée |
 | agent Instagram Mon guide | lien vers son administration | pas encore relié |
 
+## Pièces jointes et photos
+
+Dans la discussion, le trombone joint un fichier et l'appareil photo prend une photo (sur
+téléphone). Selon ta demande, l'agent chef en fait :
+
+- **une dépense** : photo d'un ticket, lue par agent-perso, enregistrée après ton « oui » ;
+  une photo envoyée sans un mot est traitée comme un ticket ;
+- **une pièce jointe de mail** : le document part dans le brouillon préparé par agent-perso ;
+- **un CV** ajouté à ton profil dans agent-emploi (PDF, DOCX, ODT, TXT) ;
+- **une offre d'emploi** ajoutée à ton suivi (document texte, pas une photo).
+
+Les fichiers ne sont jamais écrits sur le disque : ils restent en mémoire 15 minutes au plus, le
+temps de la confirmation. Limite : 10 Mo ; les photos sont réduites avant l'envoi.
+
 ## Comment la mémoire s'enrichit
 
 1. Un agent signale un événement : offre écartée ou retenue, texte corrigé à la main, entretien
@@ -67,4 +81,4 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
 - `memory.py` : mémoire et extraction des souvenirs — `agents.py` : connexion aux agents
-- `db.py` : Postgres ou SQLite — `llm.py` : appel à Claude Code — `static/` : interface
+- `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Claude Code — `static/` : interface
