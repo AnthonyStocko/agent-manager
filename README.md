@@ -14,7 +14,7 @@ L'agent qui chapeaute les autres. Quatre rôles :
 | Agent | Ce que l'agent chef sait faire | État |
 |---|---|---|
 | agent-emploi | mémoire dans les deux sens, recherche, candidature, résumé, point du matin | complet (branche `connexion-agent-chef` d'agent-emploi) |
-| agent-perso | lui transmettre une demande (`/ask-agent`) et afficher s'il est en ligne | sans modification d'agent-perso ; pas encore de mémoire partagée |
+| agent-perso | lui transmettre toute demande par sa zone de saisie unique (`/assistant`) : dépenses, tâches, mails, agenda, planning ; confirmation par « oui » / « non » avant toute écriture | sans modification d'agent-perso ; pas encore de mémoire partagée |
 | agent Instagram Mon guide | lien vers son administration | pas encore relié |
 
 ## Comment la mémoire s'enrichit

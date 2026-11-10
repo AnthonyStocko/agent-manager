@@ -66,7 +66,7 @@ class Emploi:
 
 class Perso:
     key, name = "perso", "Agent perso"
-    description = "mails, agenda, tâches, dépenses, planning de la journée"
+    description = "mails, agenda, tâches, dépenses, planning de la journée, brouillons de mail"
 
     def __init__(self):
         self.url = (os.getenv("PERSO_URL") or "").rstrip("/")
@@ -81,14 +81,18 @@ class Perso:
         raw = f"{self.user}:{self.password}".encode()
         return {"Authorization": "Basic " + base64.b64encode(raw).decode()}
 
-    def ask(self, prompt, history=()):
+    def assistant(self, text, previous=""):
+        """Zone de saisie unique d'agent-perso (/assistant) : il choisit lui-même la fonctionnalité
+        (dépense, tâche, mails, agenda, planning, question…). Les écritures reviennent « à confirmer »."""
         if not self.configured:
             raise AgentError("non configuré (variables PERSO_URL et PERSO_PASSWORD).")
-        res = _call(self.url + "/ask-agent", {
-            "prompt": prompt, "provider": os.getenv("PERSO_PROVIDER") or "claude-pro",
-            "history": [{"role": m["role"], "content": m["content"]} for m in history]},
-            self._headers(), timeout=300)
-        return str(res.get("answer") or "").strip() or "(réponse vide)"
+        return _call(self.url + "/assistant", {
+            "texte": text[:1000], "precedent": previous[:1000],
+            "provider": os.getenv("PERSO_PROVIDER") or "claude-pro"}, self._headers(), timeout=300)
+
+    def confirm(self, token, confirmed=True):
+        return _call(self.url + "/assistant/confirm", {"jeton": token, "confirmer": bool(confirmed)},
+                     self._headers(), timeout=300)
 
     def summary(self):
         if not self.configured:

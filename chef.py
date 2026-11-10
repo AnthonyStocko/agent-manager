@@ -1,6 +1,7 @@
 """L'agent chef : point d'entrée unique (chat), tableau de bord et initiatives du matin."""
 import datetime
 import json
+import re
 import threading
 import time
 from zoneinfo import ZoneInfo
@@ -56,6 +57,87 @@ def history(limit=60):
     return rows[::-1]
 
 
+# ---------- agent perso : demandes, questions en attente et confirmations ----------
+PENDING_MINUTES = 15
+YES = re.compile(r"^\W*(oui|ok|okay|d'accord|dac|confirme[rz]?|je confirme|vas[- ]y|go|valide[rz]?|yes|c'est bon)\b", re.I)
+NO = re.compile(r"^\W*(non|annule[rz]?|stop|laisse tomber|no)\b", re.I)
+
+
+def _pending(key):
+    """État en attente côté agent perso (question posée ou action à confirmer), s'il est encore valable."""
+    try:
+        state = json.loads(db.kv_get(key) or "null")
+    except ValueError:
+        state = None
+    if state and time.time() - state.get("at", 0) < PENDING_MINUTES * 60:
+        return state
+    return None
+
+
+def _set_pending(key, value):
+    db.kv_set(key, json.dumps({**value, "at": time.time()}, ensure_ascii=False) if value else "null")
+
+
+def _perso_result(result):
+    """Résultat d'une fonctionnalité d'agent-perso, en texte lisible dans la discussion."""
+    if not isinstance(result, dict):
+        return str(result or "Fait.")
+    if result.get("texte"):
+        return str(result["texte"]) + (f"\n\n{result['note']}" if result.get("note") else "")
+    if result.get("type") == "job":
+        return "Traitement lancé : suis sa progression dans l'agent perso."
+    raw = json.dumps({k: v for k, v in result.items() if k != "type"}, ensure_ascii=False, indent=1)
+    return ("Résultat reçu (affichage détaillé dans l'agent perso) :\n" + raw[:1500]
+            + ("\n…" if len(raw) > 1500 else ""))
+
+
+def _perso_reply(res, text):
+    """Met en forme la réponse de /assistant et retient ce qui attend une suite (question, confirmation)."""
+    kind = res.get("type")
+    if kind == "clarification":
+        _set_pending("perso_question", {"text": text, "question": str(res.get("message") or "")})
+        options = [str(x) for x in res.get("interpretations") or []]
+        return str(res.get("message") or "Peux-tu préciser ?") + (
+            "\n" + "\n".join("- " + o for o in options) if options else "")
+    if kind in ("aide", "hors_perimetre"):
+        feats = [f"- {f.get('titre')} : {f.get('description')}" for f in res.get("fonctionnalites") or []]
+        return str(res.get("message") or "") + ("\n" + "\n".join(feats) if feats else "")
+    parts, tokens, questions = [], [], []
+    for a in res.get("actions") or []:
+        title, status = a.get("titre") or a.get("fonction") or "Action", a.get("statut")
+        if status == "fait":
+            parts.append(f"**{title}**\n{_perso_result(a.get('resultat'))}")
+        elif status == "a_confirmer":
+            tokens.append({"jeton": a.get("jeton"), "resume": str(a.get("resume") or title)})
+            parts.append(f"**{title}** — à confirmer :\n{a.get('resume') or ''}")
+        elif status == "info_manquante":
+            questions.append(str(a.get("question") or ""))
+            parts.append(f"**{title}** — il me manque une information : {a.get('question') or ''}")
+        elif status == "choix_agendas":
+            parts.append(f"**{title}** — {a.get('question') or ''} Fais ce choix dans l'agent perso.")
+        else:
+            parts.append(f"**{title}** — erreur : {a.get('message') or 'inconnue'}")
+    if tokens:
+        _set_pending("perso_confirm", {"tokens": tokens})
+        parts.append("Réponds **oui** pour confirmer, **non** pour annuler. Rien n'est enregistré avant.")
+    if questions:
+        _set_pending("perso_question", {"text": text, "question": " ".join(questions)})
+    return "\n\n".join(parts) or "L'agent perso n'a rien renvoyé."
+
+
+def _perso_confirm(state, confirmed):
+    perso, lines = agents.Perso(), []
+    for t in state.get("tokens", []):
+        try:
+            r = perso.confirm(t["jeton"], confirmed)
+            lines.append(f"Annulé : {t['resume']}" if r.get("statut") == "annule"
+                         else f"**Fait.** {_perso_result(r.get('resultat'))}")
+        except agents.AgentError as e:
+            lines.append(f"Échec ({t['resume']}) : {e}")
+    _set_pending("perso_confirm", None)
+    return "\n\n".join(lines) or "Rien à confirmer."
+
+
 ROUTER = """Tu es l'agent chef de cette personne : son point d'entrée unique. Tu la connais grâce à ta
 mémoire, tu réponds toi-même quand tu le peux, et tu confies le reste à l'agent spécialisé.
 
@@ -67,6 +149,8 @@ AGENTS DISPONIBLES :
 
 ÉTAT DE LA RECHERCHE D'EMPLOI :
 {emploi}
+
+QUESTION EN ATTENTE DE L'AGENT PERSO : {question}
 
 CONVERSATION RÉCENTE :
 {history}
@@ -82,8 +166,12 @@ Actions :
 - "emploi_chercher" : lancer une nouvelle recherche d'offres et leur notation (long, plusieurs minutes).
 - "emploi_candidature" : générer le CV et la lettre pour une offre ; mets son numéro dans "offer_id"
   (les numéros entre crochets ci-dessus). Si l'offre visée n'est pas claire, utilise "repondre" pour demander.
-- "perso" : la demande concerne mails, agenda, tâches, dépenses ou planning ; reformule-la complètement
-  dans "demande_perso" pour l'agent perso (il ne voit pas cette conversation).
+- "perso" : la demande concerne mails, agenda, tâches, dépenses, planning ou brouillons de mail ;
+  recopie-la dans "demande_perso" pour l'agent perso (il ne voit pas cette conversation), en gardant
+  tous les montants, noms et dates tels qu'ils sont écrits, sans rien ajouter. S'il y a une question
+  en attente de l'agent perso et que le message y répond, choisis "perso" et mets dans
+  "demande_perso" la réponse telle quelle. C'est lui qui enregistre les dépenses et crée les tâches :
+  ne réponds jamais toi-même que c'est impossible.
 N'utilise un agent que s'il est marqué disponible ; sinon explique dans "reponse" ce qu'il faut configurer.
 
 "a_retenir" : liste (souvent vide) des informations durables que la personne vient de donner sur
@@ -95,6 +183,16 @@ def chat(message):
     message = str(message or "").strip()[:6000]
     if not message:
         raise ValueError("Message vide.")
+    # Réponse à une demande de confirmation de l'agent perso : traitée sans passer par le modèle
+    confirm = _pending("perso_confirm")
+    if confirm and (YES.match(message) or NO.match(message)):
+        answer = _perso_confirm(confirm, bool(YES.match(message)))
+        _save("user", message)
+        _save("assistant", answer, "perso")
+        return {"answer": answer, "agent": "perso", "remembered": 0}
+    if confirm:
+        _set_pending("perso_confirm", None)  # autre sujet : l'action en attente est abandonnée
+    question = _pending("perso_question")
     past = history(HISTORY)
     emploi, perso = agents.Emploi(), agents.Perso()
     state = "(agent emploi non disponible)"
@@ -111,6 +209,7 @@ def chat(message):
         agents="\n".join(f"- {a.key} ({a.name}) : {a.description} — "
                          f"{'disponible' if a.configured else 'NON CONFIGURÉ'}" for a in (emploi, perso)),
         emploi=state,
+        question=question["question"] if question else "(aucune)",
         history="\n".join(f"{'Elle' if m['role'] == 'user' else 'Toi'} : {m['content'][:700]}"
                           for m in past) or "(début de conversation)",
         message=message))
@@ -139,7 +238,9 @@ def chat(message):
                       f"({emploi.url}).\n\nLettre :\n\n{docs.get('letter_md', '')}")
         elif action == "perso":
             agent_used = "perso"
-            answer = perso.ask(str(plan.get("demande_perso") or message))
+            text = str(plan.get("demande_perso") or message)
+            _set_pending("perso_question", None)
+            answer = _perso_reply(perso.assistant(text, question["text"] if question else ""), text)
     except agents.AgentError as e:
         answer = f"Je n'ai pas pu joindre l'agent {agent_used} : {e}"
     except (TypeError, ValueError):
