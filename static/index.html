@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent chef</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Agent chef</h1>
+  <nav>
+    <button data-tab="chat" class="active">Discussion</button>
+    <button data-tab="board">Tableau de bord</button>
+    <button data-tab="memory">Mémoire</button>
+    <form id="logout" method="post" action="/logout" hidden><button>Déconnexion</button></form>
+  </nav>
+</header>
+<div id="toast" hidden></div>
+<main>
+<section id="tab-chat">
+  <div class="card">
+    <div id="chat-log"></div>
+    <form id="chat-form">
+      <textarea id="chat-input" rows="2" placeholder="Demande-moi quelque chose : « cherche de nouvelles offres », « prépare ma candidature pour l'offre 12 », « qu'ai-je de prévu demain ? »"></textarea>
+      <button class="primary" id="chat-send">Envoyer</button>
+    </form>
+    <div class="toolbar"><button id="chat-clear" type="button">Effacer la discussion</button></div>
+  </div>
+</section>
+
+<section id="tab-board" hidden>
+  <div class="toolbar">
+    <button id="board-refresh">Actualiser</button>
+    <button id="board-morning" class="primary">Lancer le point du matin maintenant</button>
+  </div>
+  <div id="briefing" class="card" style="margin-bottom:16px" hidden></div>
+  <div id="board" class="grid"></div>
+</section>
+
+<section id="tab-memory" hidden>
+  <div class="card" style="margin-bottom:16px">
+    <p class="hint">Ce que tes agents ont appris de toi. La mémoire s'enrichit seule ; tu peux corriger, supprimer ou ajouter un souvenir.</p>
+    <div class="toolbar">
+      <select id="mem-cat"></select>
+      <input id="mem-text" placeholder="Ajouter un souvenir à la main" style="flex:1; min-width:200px">
+      <button id="mem-add" class="primary">Ajouter</button>
+    </div>
+    <p id="mem-pending" class="hint"></p>
+  </div>
+  <div id="mem-list"></div>
+</section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

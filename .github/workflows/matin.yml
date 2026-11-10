@@ -1,0 +1,43 @@
+# Point du matin : appelle POST /cron/matin de l'agent chef, qui lance la recherche d'offres,
+# la notation, la liste des relances et le traitement de la mémoire.
+name: Point du matin
+
+on:
+  schedule:
+    # GitHub ne connaît que l'heure UTC : 5 h 40 et 6 h 40 UTC font 7 h 40 à Paris en été ou en
+    # hiver. L'agent chef ne lance le point qu'une fois par jour : le second appel ne fait rien.
+    - cron: "40 5 * * 1-5"
+    - cron: "40 6 * * 1-5"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: matin
+  cancel-in-progress: false
+
+jobs:
+  matin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Appel de /cron/matin
+        env:
+          AGENT_URL: ${{ secrets.AGENT_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$AGENT_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Définis les secrets AGENT_URL et CRON_SECRET du dépôt."
+            exit 1
+          fi
+          # Serveur endormi : jusqu'à une minute pour répondre ; trois tentatives espacées d'une minute
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o reponse.json -w '%{http_code}' --connect-timeout 30 --max-time 120 -X POST \
+                   -H "Authorization: Bearer $CRON_SECRET" "${AGENT_URL%/}/cron/matin" || true)
+            echo "Tentative $attempt : HTTP $code"
+            if [ -s reponse.json ]; then cat reponse.json; echo; fi
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 60
+          done
+          echo "::error::L'agent chef n'a pas répondu."
+          exit 1

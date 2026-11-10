@@ -1,0 +1,30 @@
+# Déploiement Render : New > Blueprint, puis choisir ce dépôt.
+services:
+  - type: web
+    name: agent-manager
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_USERNAME
+        value: admin
+      - key: APP_PASSWORD             # mot de passe de l'agent chef
+        sync: false
+      - key: CLAUDE_CODE_OAUTH_TOKEN  # jeton d'abonnement (`claude setup-token`)
+        sync: false
+      - key: DATABASE_URL             # base Postgres (Neon, Supabase…) : la mémoire y est conservée
+        sync: false
+      - key: HUB_TOKEN                # secret partagé avec agent-emploi (même valeur des deux côtés)
+        sync: false
+      - key: CRON_SECRET              # secret du point du matin (GitHub Actions)
+        sync: false
+      - key: EMPLOI_URL               # ex. https://agent-emploi.onrender.com
+        sync: false
+      - key: PERSO_URL                # ex. https://agent-perso-1.onrender.com
+        sync: false
+      - key: PERSO_USERNAME
+        value: admin
+      - key: PERSO_PASSWORD           # le APP_PASSWORD d'agent-perso
+        sync: false
+      - key: INSTAGRAM_URL            # facultatif : lien vers l'administration de l'agent Instagram
+        sync: false
