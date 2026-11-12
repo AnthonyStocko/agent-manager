@@ -3,12 +3,31 @@ import base64
 import json
 import os
 import secrets
+import time
 import urllib.error
 import urllib.request
 
 
 class AgentError(Exception):
-    pass
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
+
+
+# Erreurs passagères (service qui se réveille ou redémarre, erreurs Cloudflare 52x) : on peut réessayer.
+TRANSIENT_CODES = {502, 503, 504, 520, 521, 522, 523, 524}
+RETRY_DELAY = 20  # secondes entre deux essais
+
+
+def _call_retry(*args, retries=2, **kwargs):
+    """Comme _call, mais réessaie après une erreur passagère. À réserver aux appels sans écriture."""
+    for attempt in range(retries + 1):
+        try:
+            return _call(*args, **kwargs)
+        except AgentError as e:
+            if e.code not in TRANSIENT_CODES or attempt == retries:
+                raise
+            time.sleep(RETRY_DELAY)
 
 
 def _call(url, body=None, headers=None, timeout=240, raw=None, with_headers=False):
@@ -28,7 +47,7 @@ def _call(url, body=None, headers=None, timeout=240, raw=None, with_headers=Fals
             detail = detail.get("error") or detail.get("detail") or text
         except (ValueError, AttributeError):
             detail = text
-        raise AgentError(f"HTTP {e.code} : {str(detail)[:300]}")
+        raise AgentError(f"HTTP {e.code} : {str(detail)[:300]}", e.code)
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise AgentError(f"injoignable ({getattr(e, 'reason', e)}). Sur l'offre gratuite de "
                          "Render, un service endormi met environ une minute à se réveiller.")
@@ -111,7 +130,8 @@ class Perso:
         (dépense, tâche, mails, agenda, planning, question…). Les écritures reviennent « à confirmer »."""
         if not self.configured:
             raise AgentError("non configuré (variables PERSO_URL et PERSO_PASSWORD).")
-        return _call(self.url + "/assistant", {
+        # Les écritures reviennent « à confirmer » : réessayer après une erreur passagère est sans risque.
+        return _call_retry(self.url + "/assistant", {
             "texte": text[:1000], "precedent": previous[:1000],
             "provider": os.getenv("PERSO_PROVIDER") or "claude-pro"}, self._headers(), timeout=300)
 
