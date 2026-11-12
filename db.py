@@ -25,6 +25,10 @@ SCHEMA = [
     f"""CREATE TABLE IF NOT EXISTS messages (
         id {ID}, role TEXT, content TEXT, agent TEXT DEFAULT '', created_at TEXT)""",
     "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)",
+    """CREATE TABLE IF NOT EXISTS dev_requests (
+        ref TEXT PRIMARY KEY, depot TEXT, demande TEXT, statut TEXT, titre TEXT DEFAULT '',
+        resume TEXT DEFAULT '', pr_url TEXT DEFAULT '', run_url TEXT DEFAULT '',
+        created_at TEXT, updated_at TEXT)""",
 ]
 
 

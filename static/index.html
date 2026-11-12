@@ -13,6 +13,7 @@
     <button data-tab="chat" class="active">Discussion</button>
     <button data-tab="board">Tableau de bord</button>
     <button data-tab="memory">Mémoire</button>
+    <button data-tab="dev">Développeur</button>
     <form id="logout" method="post" action="/logout" hidden><button>Déconnexion</button></form>
   </nav>
 </header>
@@ -56,6 +57,20 @@
     <p id="mem-pending" class="hint"></p>
   </div>
   <div id="mem-list"></div>
+</section>
+<section id="tab-dev" hidden>
+  <div class="card" style="margin-bottom:16px">
+    <p class="hint">L'agent développeur modifie le code de tes agents. Il travaille dans GitHub Actions (5 à 20 minutes), lance les vérifications du dépôt, puis fusionne dans main si tout est vert : le déploiement suit, sans relecture.</p>
+    <p id="dev-setup" class="hint" hidden></p>
+    <label>Agent à modifier<select id="dev-depot"></select></label>
+    <label>Ce qu'il faut améliorer ou corriger<textarea id="dev-text" rows="4" placeholder="Exemple : dans « Traiter mes mails », classe les brouillons par ordre d'urgence et ajoute la date limite dans l'objet."></textarea></label>
+    <div class="toolbar">
+      <button id="dev-send" class="primary">Lancer la demande</button>
+      <button id="dev-refresh">Actualiser</button>
+      <a id="dev-actions" target="_blank" rel="noopener noreferrer" hidden>Voir dans GitHub Actions</a>
+    </div>
+  </div>
+  <div id="dev-list"></div>
 </section>
 </main>
 <script src="app.js"></script>

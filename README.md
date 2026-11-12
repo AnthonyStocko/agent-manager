@@ -1,6 +1,6 @@
 # Agent chef (agent-manager)
 
-L'agent qui chapeaute les autres. Quatre rôles :
+L'agent qui chapeaute les autres. Cinq rôles :
 
 - **Mémoire commune** : il retient ce que tes agents apprennent de toi (goûts en offres, style
   d'écriture, récits d'expérience, points à travailler, profil, préférences) dans une base
@@ -8,6 +8,8 @@ L'agent qui chapeaute les autres. Quatre rôles :
 - **Point d'entrée unique** : tu lui parles, il répond lui-même ou confie la demande au bon agent.
 - **Tableau de bord** : l'état de tous tes agents sur une page.
 - **Initiatives** : un point du matin (recherche d'offres, notation, relances) lancé sans clic.
+- **Agent développeur** : tu décris une amélioration, il modifie le code de l'agent concerné, le
+  teste et le met en ligne (voir plus bas).
 
 ## Agents chapeautés
 
@@ -30,6 +32,50 @@ téléphone). Selon ta demande, l'agent chef en fait :
 
 Les fichiers ne sont jamais écrits sur le disque : ils restent en mémoire 15 minutes au plus, le
 temps de la confirmation. Limite : 10 Mo ; les photos sont réduites avant l'envoi.
+
+## Agent développeur
+
+Depuis l'onglet **Développeur** ou la discussion (« dans l'agent emploi, trie les offres par date »,
+puis « oui »), tu demandes une modification du code d'un de ces dépôts : agent-emploi, agent-perso,
+agent-manager, mon-guide-agent-instagram, Monguide.
+
+Le travail ne tourne pas sur Render mais dans GitHub Actions (workflow `developpeur.yml` de ce
+dépôt, gratuit car le dépôt est public), en 5 à 20 minutes :
+
+1. Claude Code (ton abonnement) lit le dépôt visé et fait la modification, tests compris.
+2. Les vérifications du dépôt sont lancées ; si elles échouent, Claude Code corrige (deux essais).
+3. Une branche `dev/<référence>` et une pull request sont créées. Si tout est vert, la pull request
+   est fusionnée dans `main` et le déploiement habituel du dépôt suit, **sans relecture**.
+4. Le compte rendu arrive dans la discussion et dans l'onglet Développeur.
+
+Garde-fous, réglés par dépôt dans `developpeur/depots.json` :
+
+| Dépôt | Vérifications avant fusion | Jamais modifié | Pull request laissée à relire |
+|---|---|---|---|
+| agent-emploi | compilation, tests s'il y en a, démarrage du serveur | `.github/` | — |
+| agent-perso | compilation, tous les tests `test_*.py` | `.github/` | — |
+| agent-manager | compilation, tests, démarrage du serveur | `.github/`, `developpeur/` | — |
+| mon-guide-agent-instagram | `verifier-principes.mjs`, puis la CI du dépôt | `.github/`, `CLAUDE.md`, `PRINCIPES.md`, `verifier-principes.mjs` | migrations Supabase |
+| Monguide | `npm test`, puis les workflows du dépôt | `.github/` | migrations et rollbacks Supabase |
+
+- Un travail qui touche un chemin « jamais modifié » est rejeté en entier, rien n'est poussé.
+- Vérifications en échec : la pull request reste ouverte, préfixée « [tests en échec] », rien n'est fusionné.
+- agent-emploi n'a pas encore de tests : « vert » y veut seulement dire que le code compile et que
+  le serveur démarre. L'agent développeur a pour consigne d'ajouter des tests à chaque modification.
+- Une seule demande à la fois par dépôt ; les suivantes attendent.
+- Claude Code ne reçoit ni le jeton GitHub ni `HUB_TOKEN` ; il ne peut ni pousser ni fusionner lui-même.
+
+### Mise en place (une fois)
+
+1. **Jeton GitHub** : GitHub > Settings > Developer settings > Fine-grained tokens > Generate new
+   token. Repository access : les cinq dépôts ci-dessus. Permissions : **Contents** (Read and
+   write), **Pull requests** (Read and write), **Actions** (Read and write).
+2. **Secrets de ce dépôt** (Settings > Secrets and variables > Actions) : `DEV_GITHUB_TOKEN` (le
+   jeton de l'étape 1), `CLAUDE_CODE_OAUTH_TOKEN` (le même que sur Render), `HUB_TOKEN` (la même
+   valeur que sur Render) ; `AGENT_URL` existe déjà pour le point du matin.
+3. **Render** (agent-manager) : ajoute la variable `DEV_GITHUB_TOKEN` avec le même jeton.
+
+Le workflow peut aussi être lancé à la main : onglet Actions > Agent développeur > Run workflow.
 
 ## Comment la mémoire s'enrichit
 
@@ -81,4 +127,5 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
 - `memory.py` : mémoire et extraction des souvenirs — `agents.py` : connexion aux agents
+- `dev.py` : demandes à l'agent développeur — `developpeur/` : son moteur (workflow GitHub Actions)
 - `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Claude Code — `static/` : interface

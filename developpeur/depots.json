@@ -1,0 +1,60 @@
+{
+  "agent-emploi": {
+    "depot": "AnthonyStocko/agent-emploi",
+    "nom": "Agent emploi",
+    "installation": ["pip install -q -r requirements.txt"],
+    "verifications": [
+      "python -m compileall -q .",
+      "node --check static/app.js",
+      "if ls test_*.py >/dev/null 2>&1; then python -m unittest discover -p 'test_*.py'; fi",
+      "python \"$DEV_OUTILS/demarrage.py\" 8799 python app.py 8799"
+    ],
+    "interdits": [".github/"],
+    "relecture": [],
+    "attendre_ci": false
+  },
+  "agent-perso": {
+    "depot": "AnthonyStocko/agent-perso",
+    "nom": "Agent perso",
+    "installation": ["pip install -q -r requirements.txt"],
+    "verifications": [
+      "python -m compileall -q .",
+      "python -m unittest discover -p 'test_*.py'"
+    ],
+    "interdits": [".github/"],
+    "relecture": [],
+    "attendre_ci": false
+  },
+  "agent-manager": {
+    "depot": "AnthonyStocko/agent-manager",
+    "nom": "Agent chef",
+    "installation": ["pip install -q -r requirements.txt"],
+    "verifications": [
+      "python -m compileall -q .",
+      "node --check static/app.js",
+      "python -m unittest discover -p 'test_*.py'",
+      "python \"$DEV_OUTILS/demarrage.py\" 8798 python app.py 8798"
+    ],
+    "interdits": [".github/", "developpeur/"],
+    "relecture": [],
+    "attendre_ci": false
+  },
+  "mon-guide-agent-instagram": {
+    "depot": "AnthonyStocko/mon-guide-agent-instagram",
+    "nom": "Agent Instagram Mon guide",
+    "installation": [],
+    "verifications": ["node scripts/verifier-principes.mjs"],
+    "interdits": [".github/", "CLAUDE.md", "PRINCIPES.md", "scripts/verifier-principes.mjs"],
+    "relecture": ["supabase/migrations/"],
+    "attendre_ci": true
+  },
+  "Monguide": {
+    "depot": "AnthonyStocko/Monguide",
+    "nom": "Mon guide (application)",
+    "installation": ["npm ci --no-audit --no-fund"],
+    "verifications": ["npm test"],
+    "interdits": [".github/"],
+    "relecture": ["supabase/migrations/", "supabase/rollbacks/"],
+    "attendre_ci": true
+  }
+}

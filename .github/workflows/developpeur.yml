@@ -1,0 +1,63 @@
+# Agent développeur : réalise une demande de modification dans le dépôt d'un agent (voir
+# developpeur/travail.py). Lancé par l'agent chef (onglet Développeur ou discussion), ou à la main
+# depuis l'onglet Actions de GitHub.
+name: Agent développeur
+run-name: "dev-${{ inputs.id }} · ${{ inputs.depot }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      depot:
+        description: Dépôt à modifier
+        required: true
+        type: choice
+        options:
+          - agent-emploi
+          - agent-perso
+          - agent-manager
+          - mon-guide-agent-instagram
+          - Monguide
+      demande:
+        description: Ce qu'il faut améliorer ou corriger
+        required: true
+        type: string
+      id:
+        description: Référence de la demande (donnée par l'agent chef)
+        required: false
+        default: manuel
+        type: string
+
+permissions: {}
+
+# Une seule demande à la fois par dépôt : les suivantes attendent leur tour
+concurrency:
+  group: developpeur-${{ inputs.depot }}
+  cancel-in-progress: false
+
+jobs:
+  travail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Installation de Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Travail de l'agent développeur
+        env:
+          DEPOT: ${{ inputs.depot }}
+          DEMANDE: ${{ inputs.demande }}
+          ID: ${{ inputs.id }}
+          DEV_GITHUB_TOKEN: ${{ secrets.DEV_GITHUB_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDE_CLI_MODEL: ${{ vars.CLAUDE_CLI_MODEL }}
+          AGENT_URL: ${{ secrets.AGENT_URL }}
+          HUB_TOKEN: ${{ secrets.HUB_TOKEN }}
+        run: python developpeur/travail.py

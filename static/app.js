@@ -34,10 +34,10 @@ function md(src) {
   flush(); endList(); return html;
 }
 const safeUrl = (u) => (/^https?:\/\//i.test(u || "") ? u : "");
-const AGENT_NAMES = { emploi: "via l'agent emploi", perso: "via l'agent perso", chef: "point du matin" };
+const AGENT_NAMES = { emploi: "via l'agent emploi", perso: "via l'agent perso", chef: "point du matin", dev: "agent développeur" };
 
 // ---------- onglets ----------
-const loaders = { chat: loadChat, board: loadBoard, memory: loadMemory };
+const loaders = { chat: loadChat, board: loadBoard, memory: loadMemory, dev: loadDev };
 document.querySelectorAll("nav button[data-tab]").forEach((b) => b.onclick = () => {
   document.querySelectorAll("nav button[data-tab]").forEach((x) => x.classList.toggle("active", x === b));
   for (const t of Object.keys(loaders)) $("#tab-" + t).hidden = t !== b.dataset.tab;
@@ -191,6 +191,49 @@ $("#mem-add").onclick = (e) => busy(e.target, "Ajout…", async () => {
   const text = $("#mem-text").value.trim(); if (!text) return toast("Écris d'abord le souvenir.");
   await api("/api/memories", { category: $("#mem-cat").value, content: text, importance: 4 });
   $("#mem-text").value = ""; await loadMemory();
+});
+
+// ---------- agent développeur ----------
+const DEV_STATUS = {
+  en_cours: ["En cours", ""], fusionne: ["Fusionnée", "ok"], a_relire: ["À relire", "warn"],
+  tests_rouges: ["Vérifications en échec", "ko"], ci_rouge: ["Tests du dépôt en échec", "ko"],
+  sans_modification: ["Aucune modification", ""], refuse: ["Refusée", "ko"], erreur: ["Erreur", "ko"],
+};
+let devTimer = null;
+async function loadDev() {
+  const r = await api("/api/dev");
+  const sel = $("#dev-depot");
+  if (!sel.options.length) sel.innerHTML = Object.entries(r.depots).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+  const setup = $("#dev-setup");
+  setup.hidden = r.configured && !r.note;
+  setup.textContent = r.configured ? r.note : "Non configuré : ajoute la variable DEV_GITHUB_TOKEN dans Render (voir le README, « Agent développeur »).";
+  $("#dev-send").disabled = !r.configured;
+  const link = $("#dev-actions"); link.href = safeUrl(r.actions_url); link.hidden = !link.href;
+  $("#dev-list").innerHTML = r.items.map((d) => {
+    const [label, cls] = DEV_STATUS[d.statut] || [d.statut, ""], pr = safeUrl(d.pr_url), run = safeUrl(d.run_url);
+    return `<div class="card" style="margin-bottom:12px">
+      <p><span class="dot ${cls}"></span><strong>${esc(label)}</strong> · ${esc(r.depots[d.depot] || d.depot)}
+        <small style="color:var(--mute)"> · ${esc((d.created_at || "").slice(0, 16).replace("T", " "))} UTC · réf. ${esc(d.ref)}</small></p>
+      ${d.titre ? `<p><strong>${esc(d.titre)}</strong></p>` : ""}
+      <p class="hint">Demande : ${esc(d.demande)}</p>
+      ${d.resume ? `<details><summary>Compte rendu</summary><div class="md">${md(d.resume)}</div></details>` : ""}
+      <p>${pr ? `<a href="${esc(pr)}" target="_blank" rel="noopener noreferrer">Pull request</a> ` : ""}
+         ${run ? `<a href="${esc(run)}" target="_blank" rel="noopener noreferrer">Journal du travail</a>` : ""}</p></div>`;
+  }).join("") || '<p class="hint">Aucune demande pour l\'instant.</p>';
+  // Tant qu'une demande est en cours et que l'onglet est affiché, on actualise toutes les 30 secondes
+  clearTimeout(devTimer);
+  if (r.items.some((d) => d.statut === "en_cours"))
+    devTimer = setTimeout(() => { if (!$("#tab-dev").hidden) loadDev().catch(() => {}); }, 30000);
+}
+$("#dev-refresh").onclick = (e) => busy(e.target, "Actualisation…", loadDev);
+$("#dev-send").onclick = (e) => busy(e.target, "Lancement…", async () => {
+  const text = $("#dev-text").value.trim();
+  if (text.length < 10) return toast("Décris d'abord la modification voulue.");
+  const name = $("#dev-depot").selectedOptions[0].textContent;
+  if (!confirm(`Lancer cette demande sur « ${name} » ? Si les vérifications passent, la modification est fusionnée et déployée sans relecture.`)) return;
+  await api("/api/dev", { depot: $("#dev-depot").value, demande: text });
+  $("#dev-text").value = ""; toast("Demande lancée : le compte rendu arrivera ici et dans la discussion.", 8000);
+  await loadDev();
 });
 
 loadChat().catch((e) => toast(e.message));
