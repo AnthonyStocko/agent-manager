@@ -219,6 +219,10 @@ Actions :
 - "repondre" : tu réponds toi-même dans "reponse" (conseil, question sur elle, sur ses offres déjà
   listées ci-dessus, discussion). Tutoie, sois direct et concret, appuie-toi sur la mémoire.
 - "emploi_chercher" : lancer une nouvelle recherche d'offres et leur notation (long, plusieurs minutes).
+  Seulement si elle demande explicitement de chercher, relancer ou actualiser. Une question du type
+  « y a-t-il des annonces à Lyon ? » porte sur les offres DÉJÀ suivies : réponds avec "repondre" à partir
+  de la liste ci-dessus (filtre par lieu, dis honnêtement si la liste ne montre rien pour ce lieu, et
+  propose de lancer une nouvelle recherche).
 - "emploi_candidature" : générer le CV et la lettre pour une offre ; mets son numéro dans "offer_id"
   (les numéros entre crochets ci-dessus). Si l'offre visée n'est pas claire, utilise "repondre" pour demander.
 - "perso" : la demande concerne mails, agenda, tâches, dépenses, planning ou brouillons de mail ;
@@ -335,9 +339,13 @@ def chat(message, file=None):
             _summary_cache["value"] = None
             new = sum(v.get("new", 0) for v in report.values() if isinstance(v, dict))
             errors = [f"{k} : {v['error']}" for k, v in report.items() if isinstance(v, dict) and v.get("error")]
-            top = emploi_summary().get("top", [])[:6]
+            summary = emploi_summary()
+            top = summary.get("top", [])[:6]
             answer = (f"Recherche terminée : {new} nouvelle(s) offre(s), {scored.get('scored', 0)} notée(s)"
                       + (f", {scored['left']} restent à noter" if scored.get("left") else "") + ".")
+            if not new and summary.get("total"):
+                answer += (f" Les {summary['total']} offres déjà suivies restent consultables dans l'agent emploi "
+                           f"({emploi.url}) : « nouvelle » ne compte que ce que la recherche vient d'ajouter.")
             if top:
                 answer += "\n\nMeilleures offres en cours :\n" + _offers_text(top)
             if errors:
