@@ -41,5 +41,31 @@ class EmploiJetonTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, 401)
 
 
+class InstagramTest(unittest.TestCase):
+    ENV = {"INSTAGRAM_URL": "https://i/", "INSTAGRAM_TOKEN": "t"}
+
+    def test_sans_jeton(self):
+        with mock.patch.dict(agents.os.environ, {"INSTAGRAM_URL": "https://i"}), \
+                mock.patch.dict(agents.os.environ, {"INSTAGRAM_TOKEN": ""}):
+            with self.assertRaises(agents.AgentError) as cm:
+                agents.Instagram().pending_comments()
+        self.assertIn("INSTAGRAM_TOKEN", str(cm.exception))
+
+    def test_liste_normalisee(self):
+        raw = {"comments": [{"id": 3, "account": "@x", "text": "Bravo", "url": "https://p", "created_at": "2026-11-12T08:30:00Z"}, "?"]}
+        with mock.patch.dict(agents.os.environ, self.ENV), \
+                mock.patch.object(agents, "_call_retry", return_value=raw) as c:
+            r = agents.Instagram().pending_comments()
+        self.assertEqual(c.call_args[0][0], "https://i/api/comments/pending")
+        self.assertEqual(r["count"], 1)
+        self.assertEqual(r["items"][0]["proposition"], "Bravo")
+        self.assertEqual(r["items"][0]["date"], "2026-11-12 08:30")
+
+    def test_texte_du_chat(self):
+        import chef
+        self.assertIn("Aucun", chef.comments_text({"items": []}))
+        self.assertIn("1 commentaire(s)", chef.comments_text({"items": [{"proposition": "Bravo", "cible": "@x"}]}))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -34,7 +34,7 @@ function md(src) {
   flush(); endList(); return html;
 }
 const safeUrl = (u) => (/^https?:\/\//i.test(u || "") ? u : "");
-const AGENT_NAMES = { emploi: "via l'agent emploi", perso: "via l'agent perso", chef: "point du matin", dev: "agent développeur" };
+const AGENT_NAMES = { emploi: "via l'agent emploi", perso: "via l'agent perso", instagram: "via l'agent Instagram", chef: "point du matin", dev: "agent développeur" };
 
 // ---------- onglets ----------
 const loaders = { chat: loadChat, board: loadBoard, memory: loadMemory, dev: loadDev };
@@ -134,6 +134,16 @@ function emploiCard(d) {
     ${rel.length ? `<p><strong>À relancer</strong></p><ul class="plain">${rel.map((o) =>
       `<li>${esc(o.title)} · ${esc(o.company || "?")} <small>(postulée le ${esc(o.applied_at)})</small></li>`).join("")}</ul>` : ""}`;
 }
+function instagramCard(d) {
+  const items = d.items || [];
+  return `<div class="stats"><div><b class="big">${d.count ?? items.length}</b><span>commentaires en attente</span></div></div>
+    ${items.length ? `<ul class="plain">${items.slice(0, 10).map((c) => {
+      const post = safeUrl(c.post);
+      return `<li>${c.cible ? `<strong>${esc(c.cible)}</strong> · ` : ""}« ${esc(c.proposition)} »
+        ${post ? `<a href="${esc(post)}" target="_blank" rel="noopener noreferrer">publication</a>` : ""}
+        ${c.date ? `<small>(${esc(c.date)})</small>` : ""}</li>`;
+    }).join("")}</ul>` : '<p class="hint">Rien à valider pour l\'instant.</p>'}`;
+}
 async function loadBoard() {
   const d = await api("/api/dashboard");
   const b = $("#briefing");
@@ -146,6 +156,7 @@ async function loadBoard() {
     return `<div class="card"><h2>${esc(a.name)}</h2><p class="hint">${esc(a.description)}</p>
       <p>${state}${a.error ? ` — ${esc(a.error)}` : ""}</p>
       ${a.ok && a.key === "emploi" ? emploiCard(a.data) : ""}
+      ${a.ok && a.key === "instagram" ? instagramCard(a.data) : ""}
       ${url ? `<p><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Ouvrir l'agent</a></p>` : ""}</div>`;
   }).join("") + `<div class="card"><h2>Mémoire commune</h2><div class="stats">
       <div><b class="big">${d.memory_count}</b><span>souvenirs</span></div>

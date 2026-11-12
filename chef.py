@@ -45,6 +45,21 @@ def dashboard():
             "pending_events": memory.pending_count()}
 
 
+def comments_text(data, limit=10):
+    """Commentaires en attente de l'agent Instagram, en texte lisible dans la discussion."""
+    items = data.get("items") or []
+    if not items:
+        return "Aucun commentaire en attente dans l'agent Instagram."
+    lines = []
+    for c in items[:limit]:
+        head = " · ".join(x for x in (c.get("cible"), c.get("date")) if x)
+        lines.append(f"- {head + ' : ' if head else ''}« {c.get('proposition') or '(texte vide)'} »"
+                     + (f" ({c['post']})" if c.get("post") else ""))
+    more = f"\n…et {len(items) - limit} autre(s)." if len(items) > limit else ""
+    return (f"**{len(items)} commentaire(s) en attente** dans l'agent Instagram :\n" + "\n".join(lines) + more
+            + "\n\nLa validation se fait dans l'agent Instagram.")
+
+
 def _offers_text(offers):
     return "\n".join(f"- [{o['id']}] {o['title']} — {o.get('company') or '?'}, "
                      f"{o.get('location') or '?'} (score {o.get('score')})" for o in offers)
@@ -223,6 +238,8 @@ Actions :
   « y a-t-il des annonces à Lyon ? » porte sur les offres DÉJÀ suivies : réponds avec "repondre" à partir
   de la liste ci-dessus (filtre par lieu, dis honnêtement si la liste ne montre rien pour ce lieu, et
   propose de lancer une nouvelle recherche).
+- "instagram_commentaires" : elle veut consulter les commentaires en attente (propositions de
+  commentaires à valider) de l'agent Instagram. Lecture seule : tu ne valides ni ne publies rien.
 - "emploi_candidature" : générer le CV et la lettre pour une offre ; mets son numéro dans "offer_id"
   (les numéros entre crochets ci-dessus). Si l'offre visée n'est pas claire, utilise "repondre" pour demander.
 - "perso" : la demande concerne mails, agenda, tâches, dépenses, planning ou brouillons de mail ;
@@ -319,7 +336,7 @@ def chat(message, file=None):
     plan = llm.ask_json(ROUTER.format(
         memory=memory.as_text() or "(rien pour l'instant)",
         agents="\n".join(f"- {a.key} ({a.name}) : {a.description} — "
-                         f"{'disponible' if a.configured else 'NON CONFIGURÉ'}" for a in (emploi, perso)),
+                         f"{'disponible' if a.configured else 'NON CONFIGURÉ'}" for a in (emploi, perso, agents.Instagram())),
         emploi=state,
         dev_state="disponible" if dev.configured() else "NON CONFIGURÉ : variable DEV_GITHUB_TOKEN manquante",
         depots="\n".join(f"- {k} : {v}" for k, v in dev.depots().items()),
@@ -350,6 +367,9 @@ def chat(message, file=None):
                 answer += "\n\nMeilleures offres en cours :\n" + _offers_text(top)
             if errors:
                 answer += "\n\nSources en erreur :\n" + "\n".join("- " + e for e in errors)
+        elif action == "instagram_commentaires":
+            agent_used = "instagram"
+            answer = comments_text(agents.Instagram().pending_comments())
         elif action == "emploi_candidature":
             agent_used = "emploi"
             docs = emploi.generate(int(plan.get("offer_id")))
