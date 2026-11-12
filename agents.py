@@ -184,14 +184,55 @@ class Instagram:
 
     def __init__(self):
         self.url = (os.getenv("INSTAGRAM_URL") or "").rstrip("/")
+        self.token = os.getenv("INSTAGRAM_TOKEN") or ""
+        # Route de l'agent Instagram qui liste les commentaires à valider (modifiable sans toucher au code)
+        self.comments_path = "/" + (os.getenv("INSTAGRAM_COMMENTS_PATH") or "api/comments/pending").lstrip("/")
 
     @property
     def configured(self):
         return bool(self.url)
 
+    @staticmethod
+    def _text(item, *keys):
+        for k in keys:
+            if item.get(k):
+                return str(item[k]).strip()
+        return ""
+
+    def pending_comments(self):
+        """Commentaires en attente de validation (lecture seule). Retourne {"count": n, "items": [...]}."""
+        if not self.configured:
+            raise AgentError("non configuré (variable INSTAGRAM_URL).")
+        if not self.token:
+            raise AgentError("accès non configuré : ajoute la variable INSTAGRAM_TOKEN (jeton d'accès de l'agent Instagram).")
+        try:
+            raw = _call_retry(self.url + self.comments_path, headers={"Authorization": "Bearer " + self.token},
+                              timeout=90)
+        except AgentError as e:
+            if e.code in (401, 403):
+                raise AgentError(f"l'agent Instagram refuse le jeton INSTAGRAM_TOKEN (HTTP {e.code}).", e.code)
+            if e.code == 404:
+                raise AgentError(f"route {self.comments_path} introuvable chez l'agent Instagram : vérifie la "
+                                 "variable INSTAGRAM_COMMENTS_PATH.", 404)
+            raise
+        if isinstance(raw, dict):
+            raw = next((raw[k] for k in ("commentaires", "comments", "items", "pending", "data")
+                        if isinstance(raw.get(k), list)), [])
+        items = []
+        for c in raw if isinstance(raw, list) else []:
+            if not isinstance(c, dict):
+                continue
+            items.append({
+                "id": self._text(c, "id", "uuid"),
+                "cible": self._text(c, "cible", "target", "compte", "account", "auteur_post", "post_author"),
+                "post": self._text(c, "post", "post_url", "url", "lien", "permalink"),
+                "proposition": self._text(c, "proposition", "texte", "text", "comment", "commentaire", "content"),
+                "date": self._text(c, "created_at", "date", "cree_le")[:16].replace("T", " "),
+            })
+        return {"count": len(items), "items": items}
+
     def summary(self):
-        raise AgentError("pas encore relié : pour l'instant, seul le lien vers son interface "
-                         "d'administration est disponible.")
+        return self.pending_comments()
 
 
 def all_agents():

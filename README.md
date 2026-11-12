@@ -17,7 +17,7 @@ L'agent qui chapeaute les autres. Cinq rôles :
 |---|---|---|
 | agent-emploi | mémoire dans les deux sens, recherche, candidature, résumé, point du matin | complet (branche `connexion-agent-chef` d'agent-emploi) |
 | agent-perso | lui transmettre toute demande par sa zone de saisie unique (`/assistant`) : dépenses, tâches, mails, agenda, planning ; confirmation par « oui » / « non » avant toute écriture | sans modification d'agent-perso ; pas encore de mémoire partagée |
-| agent Instagram Mon guide | lien vers son administration | pas encore relié |
+| agent Instagram Mon guide | consulter les commentaires en attente (lecture seule : discussion « quels commentaires attendent ? » et carte du tableau de bord), lien vers son administration | lecture seule ; validation dans l'agent Instagram |
 
 ## Pièces jointes et photos
 
@@ -75,7 +75,9 @@ Tout est visible et modifiable dans l'onglet Mémoire.
    - `CRON_SECRET` : une autre chaîne aléatoire.
    - `EMPLOI_URL` : l'adresse d'agent-emploi (`https://….onrender.com`).
    - `PERSO_URL` et `PERSO_PASSWORD` : l'adresse d'agent-perso et son `APP_PASSWORD`.
-   - `INSTAGRAM_URL` : facultatif.
+   - `INSTAGRAM_URL` : facultatif (adresse de l'agent Instagram). Pour consulter ses commentaires en
+     attente, ajoute aussi `INSTAGRAM_TOKEN` (jeton d'accès qu'il accepte en `Authorization: Bearer`) ;
+     `INSTAGRAM_COMMENTS_PATH` (`api/comments/pending` par défaut) est la route qui les liste.
 3. **agent-emploi** : fusionne sa branche `connexion-agent-chef`, puis ajoute dans ses variables
    Render `HUB_URL` (l'adresse de l'agent chef) et `HUB_TOKEN` (la même valeur qu'ici).
 4. **Point du matin** : dans ce dépôt GitHub, Settings > Secrets and variables > Actions, ajoute
