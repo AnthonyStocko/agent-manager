@@ -30,3 +30,5 @@ services:
         sync: false
       - key: INSTAGRAM_URL            # facultatif : lien vers l'administration de l'agent Instagram
         sync: false
+      - key: INSTAGRAM_TOKEN          # facultatif : jeton d'accès de l'agent Instagram (commentaires en attente)
+        sync: false
