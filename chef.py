@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import agents
 import db
+import dev
 import files
 import llm
 import memory
@@ -201,6 +202,9 @@ AGENTS DISPONIBLES :
 
 QUESTION EN ATTENTE DE L'AGENT PERSO : {question}
 
+DÉPÔTS QUE L'AGENT DÉVELOPPEUR PEUT MODIFIER ({dev_state}) :
+{depots}
+
 PIÈCE JOINTE AU MESSAGE : {attachment}
 
 CONVERSATION RÉCENTE :
@@ -209,7 +213,7 @@ CONVERSATION RÉCENTE :
 NOUVEAU MESSAGE : {message}
 
 Choisis UNE action et réponds en JSON :
-{{"action": "...", "offer_id": null, "demande_perso": "", "reponse": "", "a_retenir": []}}
+{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "reponse": "", "a_retenir": []}}
 
 Actions :
 - "repondre" : tu réponds toi-même dans "reponse" (conseil, question sur elle, sur ses offres déjà
@@ -227,6 +231,12 @@ Actions :
   mets dans "demande_perso" les précisions données (qui a payé, motif), sinon une chaîne vide.
 - "emploi_cv" : la pièce jointe est un CV à ajouter au profil de recherche d'emploi.
 - "emploi_annonce" : la pièce jointe est une offre d'emploi (document texte) à ajouter aux offres suivies.
+- "dev" : elle demande de modifier, corriger ou améliorer le code d'un de ses agents ou de l'application
+  Mon guide (nouvelle fonction, bug, comportement à changer). Mets dans "depot" la clé du dépôt visé
+  (liste ci-dessus) et dans "demande_dev" la demande complète pour l'agent développeur, qui ne voit pas
+  cette conversation : ce qui doit changer, le comportement attendu, les exemples donnés. Si le dépôt
+  visé ou le changement voulu n'est pas clair, utilise "repondre" pour le demander. Une demande
+  d'utiliser un agent (chercher des offres, traiter les mails) n'est pas une demande de développement.
 Avec une pièce jointe et une demande de mail, choisis "perso" : le document sera joint au brouillon au
 moment de la confirmation. Tu ne vois pas le contenu de la pièce jointe : ne le devine pas, et si son
 usage n'est pas clair, demande-le avec "repondre" (elle reste disponible quelques minutes).
@@ -235,6 +245,19 @@ N'utilise un agent que s'il est marqué disponible ; sinon explique dans "repons
 "a_retenir" : liste (souvent vide) des informations durables que la personne vient de donner sur
 elle-même, ses goûts, ses objectifs ou sa façon de travailler. Uniquement ce qu'elle a dit, mot pour
 mot ou presque. Rien sur des tiers, rien de sensible (santé, opinions, finances)."""
+
+
+def _dev_confirm(state, confirmed):
+    _set_pending("dev_confirm", None)
+    if not confirmed:
+        return "Demande annulée, rien n'a été lancé."
+    try:
+        ref = dev.submit(state["depot"], state["demande"])
+    except dev.DevError as e:
+        return f"La demande n'a pas pu être lancée : {e}"
+    return (f"**Demande lancée** (référence {ref}). L'agent développeur travaille dans GitHub Actions, en "
+            "général 5 à 20 minutes. Son compte rendu arrivera dans cette discussion ; l'avancement est "
+            "dans l'onglet Développeur.")
 
 
 def _direct(message, shown, answer, agent):
@@ -250,8 +273,10 @@ def chat(message, file=None):
         raise ValueError("Message vide.")
     shown = (message + f"\n[pièce jointe : {file['name']}]").strip() if file else message
     # Réponse à une demande de confirmation de l'agent perso : traitée sans passer par le modèle
-    expense, confirm = _pending("perso_expense"), _pending("perso_confirm")
+    expense, confirm, devel = _pending("perso_expense"), _pending("perso_confirm"), _pending("dev_confirm")
     if not file and (YES.match(message) or NO.match(message)):
+        if devel:
+            return _direct(message, shown, _dev_confirm(devel, bool(YES.match(message))), "dev")
         if expense:
             return _direct(message, shown, _expense_confirm(expense, bool(YES.match(message))), "perso")
         if confirm:
@@ -260,6 +285,8 @@ def chat(message, file=None):
         _set_pending("perso_expense", None)  # autre sujet : l'action en attente est abandonnée
     if confirm:
         _set_pending("perso_confirm", None)
+    if devel:
+        _set_pending("dev_confirm", None)
     if file:
         _hold(file)
         if not message:
@@ -290,6 +317,8 @@ def chat(message, file=None):
         agents="\n".join(f"- {a.key} ({a.name}) : {a.description} — "
                          f"{'disponible' if a.configured else 'NON CONFIGURÉ'}" for a in (emploi, perso)),
         emploi=state,
+        dev_state="disponible" if dev.configured() else "NON CONFIGURÉ : variable DEV_GITHUB_TOKEN manquante",
+        depots="\n".join(f"- {k} : {v}" for k, v in dev.depots().items()),
         question=question["question"] if question else "(aucune)",
         attachment=(f"{file['name']} ({'image' if files.is_image(file) else 'document'})" if file else "(aucune)"),
         history="\n".join(f"{'Elle' if m['role'] == 'user' else 'Toi'} : {m['content'][:700]}"
@@ -346,6 +375,19 @@ def chat(message, file=None):
                 _summary_cache["value"] = None
                 answer = ("Offre ajoutée à ton suivi. Dis « note les nouvelles offres » ou ouvre l'agent emploi "
                           "pour la noter." if r.get("new") else "Cette offre est déjà dans ton suivi.")
+        elif action == "dev":
+            agent_used = "dev"
+            depot, demande = str(plan.get("depot") or "").strip(), str(plan.get("demande_dev") or "").strip()
+            if not dev.configured():
+                answer = "L'agent développeur n'est pas configuré : ajoute la variable DEV_GITHUB_TOKEN (voir README)."
+            elif depot not in dev.depots() or len(demande) < 10:
+                answer = ("Quel agent faut-il modifier, et que doit-il faire différemment ? Dépôts possibles : "
+                          + ", ".join(dev.depots().values()) + ".")
+            else:
+                _set_pending("dev_confirm", {"depot": depot, "demande": demande})
+                answer = (f"**Demande pour l'agent développeur** — à confirmer :\n- Dépôt : {dev.depots()[depot]}\n"
+                          f"- Demande : {demande}\n\nSi les vérifications passent, la modification est fusionnée "
+                          "et déployée sans relecture. Réponds **oui** pour lancer, **non** pour annuler.")
         elif action == "perso":
             agent_used = "perso"
             text = str(plan.get("demande_perso") or message)

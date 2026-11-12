@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import agents
 import chef
 import db
+import dev
 import files
 import llm
 import memory
@@ -44,6 +45,8 @@ def api_get(path, query):
     if path == "/api/memories":
         return {"categories": memory.CATEGORIES, "items": memory.recall(limit=500),
                 "pending_events": memory.pending_count()}
+    if path == "/api/dev":
+        return dev.listing()
     raise ApiError("Route inconnue.", 404)
 
 
@@ -53,6 +56,8 @@ def api_post(path, body):
     if path == "/api/chat/clear":
         db.run("DELETE FROM messages")
         return {"ok": True}
+    if path == "/api/dev":
+        return {"ref": dev.submit(body.get("depot"), body.get("demande"))}
     if path == "/api/morning":
         return chef.start_morning(force=True)
     if path == "/api/memories":
@@ -77,13 +82,16 @@ def _bearer_ok(headers, env_name):
 
 
 def agent_api(method, path, query, body):
-    """Routes réservées aux agents chapeautés : lire la mémoire, envoyer un événement."""
+    """Routes réservées aux agents chapeautés : lire la mémoire, envoyer un événement, et compte
+    rendu de l'agent développeur."""
     if method == "GET" and path == "/agent/memory":
         cats = [c for c in (query.get("categories", [""])[0]).split(",") if c] or None
         return {"text": memory.as_text(cats, int(query.get("limit", ["40"])[0]))}
     if method == "POST" and path == "/agent/events":
         memory.add_event(body.get("agent") or "inconnu", body.get("kind") or "evenement", body.get("content"))
         return {"ok": True}
+    if method == "POST" and path == "/agent/dev/rapport":
+        return dev.report(body)
     raise ApiError("Route inconnue.", 404)
 
 
@@ -224,7 +232,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, fn(*args))
         except ApiError as e:
             self._send(e.code, {"error": str(e)})
-        except (llm.LLMError, agents.AgentError, files.ImportError_, ValueError) as e:
+        except (llm.LLMError, agents.AgentError, dev.DevError, files.ImportError_, ValueError) as e:
             self._send(400, {"error": str(e)})
         except Exception as e:
             print(f"Erreur interne : {e!r}", flush=True)
