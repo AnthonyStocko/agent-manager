@@ -86,7 +86,14 @@ class Emploi:
     def _api(self, path, body=None, timeout=240):
         if not self.configured:
             raise AgentError("non configuré (variables EMPLOI_URL et HUB_TOKEN).")
-        return _call(self.url + path, body, {"Authorization": "Bearer " + self.token}, timeout)
+        try:
+            return _call(self.url + path, body, {"Authorization": "Bearer " + self.token}, timeout)
+        except AgentError as e:
+            if e.code == 401:
+                raise AgentError("l'agent emploi refuse le jeton HUB_TOKEN (HTTP 401). Vérifie que HUB_TOKEN a la "
+                                 "même valeur chez lui et ici, et que sa branche `connexion-agent-chef` est "
+                                 "fusionnée et déployée.", 401)
+            raise
 
     def summary(self):
         return self._api("/api/summary", timeout=90)

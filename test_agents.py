@@ -31,5 +31,15 @@ class RetryTest(unittest.TestCase):
             self.assertEqual(c.call_count, 1)
 
 
+class EmploiJetonTest(unittest.TestCase):
+    def test_401_explique_le_jeton(self):
+        with mock.patch.dict(agents.os.environ, {"EMPLOI_URL": "https://e", "HUB_TOKEN": "t"}), \
+                mock.patch.object(agents, "_call", side_effect=agents.AgentError("HTTP 401 : Connexion expirée", 401)):
+            with self.assertRaises(agents.AgentError) as cm:
+                agents.Emploi().summary()
+        self.assertIn("HUB_TOKEN", str(cm.exception))
+        self.assertEqual(cm.exception.code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()
