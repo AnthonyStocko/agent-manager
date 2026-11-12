@@ -1,6 +1,6 @@
 # Agent chef (agent-manager)
 
-L'agent qui chapeaute les autres. Quatre rôles :
+L'agent qui chapeaute les autres. Cinq rôles :
 
 - **Mémoire commune** : il retient ce que tes agents apprennent de toi (goûts en offres, style
   d'écriture, récits d'expérience, points à travailler, profil, préférences) dans une base
@@ -8,6 +8,8 @@ L'agent qui chapeaute les autres. Quatre rôles :
 - **Point d'entrée unique** : tu lui parles, il répond lui-même ou confie la demande au bon agent.
 - **Tableau de bord** : l'état de tous tes agents sur une page.
 - **Initiatives** : un point du matin (recherche d'offres, notation, relances) lancé sans clic.
+- **Agent développeur** : tu décris une amélioration, il modifie le code de l'agent concerné, le
+  teste et le met en ligne (voir plus bas).
 
 ## Agents chapeautés
 
@@ -30,6 +32,23 @@ téléphone). Selon ta demande, l'agent chef en fait :
 
 Les fichiers ne sont jamais écrits sur le disque : ils restent en mémoire 15 minutes au plus, le
 temps de la confirmation. Limite : 10 Mo ; les photos sont réduites avant l'envoi.
+
+## Agent développeur
+
+L'agent développeur a son propre dépôt, [agent-dev](https://github.com/AnthonyStocko/agent-dev) :
+il modifie le code d'agent-emploi, agent-perso, agent-manager, de l'agent Instagram et de Mon guide,
+le teste dans GitHub Actions et le fusionne dans `main` si tout est vert, sans relecture. Ses
+garde-fous et sa mise en place sont décrits dans son README.
+
+L'agent chef le commande :
+
+- **onglet Développeur** : choix de l'agent, description de la modification, suivi des demandes
+  (en cours, fusionnée, à relire, en échec) avec les liens vers la pull request et le journal ;
+- **discussion** : « dans l'agent emploi, trie les offres par date », puis « oui » pour lancer ;
+- le compte rendu de l'agent développeur arrive dans la discussion à la fin du travail.
+
+Configuration côté agent chef : la variable Render `DEV_GITHUB_TOKEN` (le jeton GitHub créé pour
+agent-dev, voir son README). `HUB_TOKEN` doit avoir la même valeur dans les secrets d'agent-dev.
 
 ## Comment la mémoire s'enrichit
 
@@ -74,6 +93,7 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 - Sur l'offre gratuite de Render, un agent endormi met environ une minute à se réveiller : la
   première demande de la journée est lente.
 - `HUB_TOKEN` donne accès à la mémoire et à l'API d'agent-emploi : traite-le comme un mot de passe.
+- Autre variable de l'agent développeur : `DEV_REPO` (son dépôt, `AnthonyStocko/agent-dev` par défaut).
 - Autres variables : `PERSO_PROVIDER` (modèle demandé à agent-perso, `claude-pro` par défaut),
   `CLAUDE_CLI_MODEL`, `CLI_TIMEOUT_SECONDS`.
 
@@ -81,4 +101,5 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
 - `memory.py` : mémoire et extraction des souvenirs — `agents.py` : connexion aux agents
+- `dev.py` : commande de l'agent développeur (dépôt agent-dev)
 - `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Claude Code — `static/` : interface

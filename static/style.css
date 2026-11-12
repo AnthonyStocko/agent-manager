@@ -5,7 +5,7 @@
 body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
 header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:12px 20px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
 h1 { font-size:18px; margin:0; } h2 { font-size:16px; margin:18px 0 6px; } h2:first-child { margin-top:0; }
-nav { display:flex; align-items:center; gap:2px; }
+nav { display:flex; flex-wrap:wrap; align-items:center; gap:2px; }
 nav form { margin:0; }
 nav button { border:0; background:none; padding:8px 12px; border-radius:8px; color:var(--mute); }
 nav button.active { background:var(--bg); color:var(--ink); font-weight:600; }
@@ -51,7 +51,7 @@ label { display:block; margin:10px 0; font-size:13px; color:var(--mute); } label
 #chat-form { display:flex; gap:8px; margin-top:12px; } #chat-form textarea { flex:1; }
 .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:16px; }
 .dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--mute); margin-right:6px; }
-.dot.ok { background:var(--ok); } .dot.ko { background:var(--bad); }
+.dot.ok { background:var(--ok); } .dot.ko { background:var(--bad); } .dot.warn { background:var(--warn); }
 .big { font-size:26px; font-weight:700; } .stats { display:flex; gap:18px; flex-wrap:wrap; margin:8px 0; }
 .stats div span { display:block; font-size:12px; color:var(--mute); }
 .mem { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:start; padding:8px 0; border-top:1px solid var(--line); }
@@ -61,3 +61,4 @@ ul.plain { padding-left:18px; margin:6px 0; }
 .attach { display:flex; flex-direction:column; gap:6px; } .attach button { padding:6px 10px; font-size:18px; line-height:1; }
 .chip { display:inline-flex; align-items:center; gap:6px; margin-top:8px; padding:4px 10px; border:1px solid var(--line); border-radius:99px; font-size:13px; max-width:100%; }
 .chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .chip button { border:0; padding:0 4px; font-size:16px; }
+details summary { cursor:pointer; color:var(--mute); font-size:13px; }

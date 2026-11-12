@@ -26,5 +26,7 @@ services:
         value: admin
       - key: PERSO_PASSWORD           # le APP_PASSWORD d'agent-perso
         sync: false
+      - key: DEV_GITHUB_TOKEN         # agent développeur : jeton GitHub (voir le README d'agent-dev)
+        sync: false
       - key: INSTAGRAM_URL            # facultatif : lien vers l'administration de l'agent Instagram
         sync: false
