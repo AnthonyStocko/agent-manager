@@ -41,6 +41,30 @@ class EmploiJetonTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, 401)
 
 
+class Emploi502Test(unittest.TestCase):
+    def test_summary_reessaie_apres_502(self):
+        calls = [agents.AgentError("HTTP 502 : x", 502), {"top": []}]
+
+        def fake(*a, **k):
+            r = calls.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+        with mock.patch.dict(agents.os.environ, {"EMPLOI_URL": "https://e", "HUB_TOKEN": "t"}), \
+                mock.patch.object(agents, "_call", fake), mock.patch.object(agents.time, "sleep"):
+            self.assertEqual(agents.Emploi().summary(), {"top": []})
+
+    def test_page_html_non_affichee(self):
+        import io
+        import urllib.error
+        err = urllib.error.HTTPError("u", 502, "Bad Gateway", {}, io.BytesIO(b"<!DOCTYPE html><html><title>502</title>"))
+        with mock.patch.object(agents.urllib.request, "urlopen", side_effect=err):
+            with self.assertRaises(agents.AgentError) as cm:
+                agents._call("https://e")
+        self.assertNotIn("<", str(cm.exception))
+        self.assertEqual(cm.exception.code, 502)
+
+
 class InstagramTest(unittest.TestCase):
     ENV = {"INSTAGRAM_URL": "https://i/", "INSTAGRAM_TOKEN": "t"}
 
