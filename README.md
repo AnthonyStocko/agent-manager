@@ -47,6 +47,24 @@ L'agent chef le commande :
 - **discussion** : « dans l'agent emploi, trie les offres par date », puis « oui » pour lancer ;
 - le compte rendu de l'agent développeur arrive dans la discussion à la fin du travail.
 
+### Créer un nouvel agent
+
+« Crée un agent qui surveille tels sites et m'envoie un résumé » : si le rôle n'est pas clair, l'agent
+chef pose la question. Sinon il affiche un récapitulatif (dépôt `AnthonyStocko/agent-xxx`, libellé,
+description) et attend **oui** ou **non**. Après « oui », trois étapes dans cet ordre :
+
+1. création du dépôt GitHub privé et vide (`POST /user/repos`, avec `DEV_GITHUB_TOKEN`) ;
+2. ajout de l'agent au fichier `depots.json` d'agent-dev (branche `main`) ;
+3. demande de développement sur ce dépôt : Python sans dépendance inutile, `app.py` qui répond sur
+   `/healthz`, tests `test_*.py`, README listant les variables d'environnement.
+
+Le compte rendu arrive dans la discussion à la fin du travail. Garde-fous : clé refusée si elle n'a pas
+la forme `agent-xxx` (minuscules, chiffres, tirets), si elle existe déjà dans la liste ou si elle vaut
+`agent-dev` ; si le dépôt existe déjà sur GitHub ou si une étape échoue, tout s'arrête et le message
+dit quelles étapes ont réussi et laquelle a échoué (jamais le jeton). Aucun dépôt existant n'est
+modifié ni supprimé. Le jeton `DEV_GITHUB_TOKEN` doit avoir le droit de créer des dépôts (jeton
+classique : portée `repo` ; jeton à granularité fine : « Administration » en écriture sur le compte).
+
 Configuration côté agent chef : la variable Render `DEV_GITHUB_TOKEN` (le jeton GitHub créé pour
 agent-dev, voir son README). `HUB_TOKEN` doit avoir la même valeur dans les secrets d'agent-dev.
 

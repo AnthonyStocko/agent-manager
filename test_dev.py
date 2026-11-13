@@ -125,5 +125,105 @@ class DevTest(unittest.TestCase):
         self.assertEqual(len(self.appels), 1)
 
 
+class CreerAgentTest(unittest.TestCase):
+    """Création d'un agent à la demande, avec GitHub simulé."""
+
+    def setUp(self):
+        db.init()
+        for table in ("dev_requests", "messages", "kv"):
+            db.run(f"DELETE FROM {table}")
+        self.appels, self.pannes = [], {}
+        self.fichier = {"agent-emploi": {"depot": "AnthonyStocko/agent-emploi", "nom": "Agent emploi"}}
+        dev._depots_cache.update(at=9e12, value=dev.DEPOTS_DEFAUT)
+
+        def faux_github(methode, chemin, corps=None, racine=False):
+            self.appels.append((methode, chemin, corps, racine))
+            if (methode, chemin) in self.pannes:
+                raise self.pannes[(methode, chemin)]
+            if chemin.startswith("/contents/depots.json") and methode == "GET":
+                return {"sha": "abc", "content": base64.b64encode(json.dumps(self.fichier).encode()).decode()}
+            if methode == "PUT":
+                self.fichier = json.loads(base64.b64decode(corps["content"]))
+            return {}
+
+        for p in (mock.patch.object(dev, "_github", faux_github),
+                  mock.patch.dict(os.environ, {"DEV_GITHUB_TOKEN": "ghp_secret"})):
+            p.start()
+            self.addCleanup(p.stop)
+        self.plan = {"action": "creer_agent", "cle_depot": "agent-veille", "libelle": "Agent veille",
+                     "description_agent": "Surveille des sites et envoie un résumé chaque matin.",
+                     "reponse": "", "a_retenir": []}
+
+    def _demander(self):
+        with mock.patch.object(chef.llm, "ask_json", return_value=self.plan):
+            return chef.chat("Crée un agent qui surveille des sites")
+
+    def test_creation_reussie(self):
+        r = self._demander()
+        self.assertIn("AnthonyStocko/agent-veille", r["answer"])
+        self.assertIn("Agent veille", r["answer"])
+        self.assertEqual(self.appels, [])   # rien avant le « oui »
+        r = chef.chat("oui")
+        self.assertIn("Agent créé", r["answer"])
+        self.assertIn("compte rendu arrivera", r["answer"])
+        creation, lecture, ecriture, _relecture, lancement = self.appels
+        self.assertEqual(creation, ("POST", "/user/repos", {"name": "agent-veille", "private": True,
+                                    "auto_init": False, "description": "Agent veille"}, True))
+        self.assertEqual(lecture[:2], ("GET", "/contents/depots.json?ref=main"))
+        self.assertEqual(ecriture[:2], ("PUT", "/contents/depots.json"))
+        self.assertEqual((ecriture[2]["sha"], ecriture[2]["branch"]), ("abc", "main"))
+        nouveau = json.loads(base64.b64decode(ecriture[2]["content"]))
+        self.assertEqual(nouveau["agent-veille"], {"depot": "AnthonyStocko/agent-veille", "nom": "Agent veille"})
+        self.assertIn("agent-emploi", nouveau)   # l'existant est conservé
+        self.assertIn("agent-veille", dev._depots_cache["value"])   # cache vidé puis relu
+        self.assertEqual(lancement[1], "/actions/workflows/developpeur.yml/dispatches")
+        entree = lancement[2]["inputs"]
+        self.assertEqual(entree["depot"], "agent-veille")
+        for mot in ("vide", "/healthz", "test_*.py", "README", "Surveille des sites"):
+            self.assertIn(mot, entree["demande"])
+
+    def test_cle_invalide_ou_existante(self):
+        for cle in ("veille", "Agent-Veille", "agent-", "agent-dev", "agent-emploi", "agent veille", "agent-a/../b"):
+            self.plan["cle_depot"] = cle
+            self.assertIn("Je ne peux pas créer", self._demander()["answer"], cle)
+        self.assertEqual(self.appels, [])
+        with self.assertRaises(dev.DevError):
+            dev.creer_agent("agent-dev", "X", "Une description assez longue")
+        self.assertEqual(self.appels, [])
+
+    def test_role_pas_clair(self):
+        self.plan["description_agent"] = ""
+        self.assertIn("Que doit faire", self._demander()["answer"])
+
+    def test_depot_deja_existant_sur_github(self):
+        self.pannes[("POST", "/user/repos")] = dev.DevError(
+            "GitHub a répondu 422 : name already exists on this account", 422)
+        self._demander()
+        r = chef.chat("oui")["answer"]
+        self.assertIn("existe déjà sur GitHub", r)
+        self.assertIn("aucune étape n'a réussi", r)
+        self.assertEqual(len(self.appels), 1)   # ni depots.json ni développement
+
+    def test_echec_a_l_etape_2(self):
+        self.pannes[("PUT", "/contents/depots.json")] = dev.DevError(
+            "GitHub a répondu 409 : conflit avec ghp_secret", 409)
+        self._demander()
+        r = chef.chat("oui")["answer"]
+        self.assertIn("✅ étape 1", r)
+        self.assertIn("❌ étape 2", r)
+        self.assertIn("409", r)
+        self.assertNotIn("ghp_secret", r)
+        self.assertFalse(any("dispatches" in a[1] for a in self.appels))
+        self.assertEqual(db.run("SELECT * FROM dev_requests"), [])
+
+    def test_annulation_par_non(self):
+        self._demander()
+        self.assertIn("annulée", chef.chat("non")["answer"])
+        self.assertEqual(self.appels, [])
+        with mock.patch.object(chef.llm, "ask_json", return_value={"action": "repondre", "reponse": "ok"}):
+            self.assertNotIn("Agent créé", chef.chat("oui")["answer"])   # plus rien en attente
+        self.assertEqual(self.appels, [])
+
+
 if __name__ == "__main__":
     unittest.main()

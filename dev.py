@@ -9,6 +9,7 @@ import base64
 import datetime
 import json
 import os
+import re
 import secrets
 import time
 import urllib.error
@@ -36,8 +37,14 @@ LIBELLES = {
 }
 
 
+PROPRIETAIRE = "AnthonyStocko"
+CLE_AGENT = re.compile(r"agent(-[a-z0-9]+)+")
+
+
 class DevError(Exception):
-    pass
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code   # code HTTP de GitHub, quand l'erreur en vient
 
 
 def depots(max_age=600):
@@ -67,9 +74,11 @@ def configured():
     return bool(_token())
 
 
-def _github(method, path, body=None):
+def _github(method, path, body=None, racine=False):
+    """Appelle GitHub. Par défaut `path` est relatif au dépôt agent-dev (/repos/<DEV_REPO>) ;
+    avec `racine=True` c'est une adresse de l'API elle-même (ex. /user/repos)."""
     req = urllib.request.Request(
-        f"https://api.github.com/repos/{_repo()}{path}", method=method,
+        f"https://api.github.com{'' if racine else '/repos/' + _repo()}{path}", method=method,
         data=json.dumps(body).encode() if body is not None else None,
         headers={"Authorization": "Bearer " + _token(), "Accept": "application/vnd.github+json",
                  "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "agent-chef/1.0"})
@@ -83,7 +92,7 @@ def _github(method, path, body=None):
         except (ValueError, AttributeError):
             pass
         raise DevError(f"GitHub a répondu {e.code} : {str(detail)[:200]}. Vérifie DEV_GITHUB_TOKEN "
-                       "(accès au dépôt agent-dev, droits Actions et Contents en écriture).")
+                       "(accès au dépôt agent-dev, droits Actions et Contents en écriture).", e.code)
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise DevError(f"GitHub injoignable ({getattr(e, 'reason', e)}).")
     try:
@@ -112,6 +121,74 @@ def submit(depot, demande):
                (str(e), db.now(), ref))
         raise
     return ref
+
+
+def cle_agent_erreur(cle):
+    """Renvoie la raison pour laquelle une clé de nouvel agent est refusée, ou None si elle convient."""
+    if not CLE_AGENT.fullmatch(cle or "") or len(cle) > 60:
+        return "La clé doit avoir la forme agent-xxx (minuscules, chiffres et tirets)."
+    if cle == "agent-dev":
+        return "agent-dev est réservé à l'agent développeur."
+    if cle in depots():
+        return f"Le dépôt {cle} existe déjà dans la liste : je ne touche jamais à un dépôt existant."
+    return None
+
+
+def _ajouter_depot(cle, nom):
+    """Ajoute l'entrée au fichier depots.json d'agent-dev (API contents), puis vide le cache."""
+    fichier = _github("GET", "/contents/depots.json?ref=main")
+    liste = json.loads(base64.b64decode(fichier["content"]))
+    if cle in liste:
+        raise DevError(f"{cle} figure déjà dans depots.json : rien n'a été modifié.")
+    liste[cle] = {"depot": f"{PROPRIETAIRE}/{cle}", "nom": nom}
+    contenu = json.dumps(liste, indent=2, ensure_ascii=False) + "\n"
+    _github("PUT", "/contents/depots.json", {
+        "message": f"Ajoute {cle} à la liste des dépôts", "branch": "main", "sha": fichier["sha"],
+        "content": base64.b64encode(contenu.encode()).decode()})
+    _depots_cache.update(at=0.0, value=None)
+
+
+def creer_agent(cle, libelle, description):
+    """Crée un nouvel agent en trois étapes : dépôt GitHub privé vide, entrée dans depots.json d'agent-dev,
+    demande de développement sur ce dépôt. S'arrête à la première erreur en disant ce qui a réussi.
+    Renvoie la référence de la demande."""
+    cle, libelle = str(cle or "").strip(), " ".join(str(libelle or "").split())[:80]
+    description = str(description or "").replace("\r", "").strip()[:3000]
+    raison = cle_agent_erreur(cle)
+    if raison:
+        raise DevError(raison)
+    if not libelle or len(description) < 10:
+        raise DevError("Il manque le libellé ou la description de l'agent.")
+    if not configured():
+        raise DevError("Agent développeur non configuré : ajoute la variable DEV_GITHUB_TOKEN (voir README).")
+    etapes = ["créer le dépôt GitHub privé", "l'ajouter à la liste des dépôts (depots.json d'agent-dev)",
+              "lancer le développement de l'agent"]
+
+    def echec(n, e, *, existe=False):
+        faites = "".join(f"\n- ✅ étape {i + 1} : {etapes[i]}" for i in range(n))
+        detail = str(e).replace(_token(), "***")
+        return DevError(
+            f"Création de {cle} interrompue." + (faites or "\n- aucune étape n'a réussi")
+            + f"\n- ❌ étape {n + 1} ({etapes[n]}) : " + ("le dépôt existe déjà sur GitHub, je n'y touche pas. " if existe else "")
+            + detail + "\n- les étapes suivantes n'ont pas été faites.")
+
+    try:
+        _github("POST", "/user/repos", {"name": cle, "private": True, "auto_init": False,
+                                        "description": libelle}, racine=True)
+    except DevError as e:
+        raise echec(0, e, existe=e.code == 422 and "already exists" in str(e).lower())
+    try:
+        _ajouter_depot(cle, libelle)
+    except (DevError, ValueError, KeyError, TypeError) as e:
+        raise echec(1, e)
+    demande = (f"Crée un nouvel agent « {libelle} ». Le dépôt {PROPRIETAIRE}/{cle} est vide : tu pars de zéro. "
+               "L'agent doit être en Python, sans dépendance inutile, avec un app.py qui répond sur /healthz, "
+               "des tests test_*.py et un README qui liste les variables d'environnement à définir.\n\n"
+               "Ce que l'agent doit faire :\n" + description)
+    try:
+        return submit(cle, demande)
+    except DevError as e:
+        raise echec(2, e)
 
 
 def report(body):
