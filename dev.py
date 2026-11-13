@@ -88,8 +88,15 @@ def _github(method, path, body=None, racine=False):
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")
         try:
-            detail = json.loads(detail).get("message") or detail
-        except (ValueError, AttributeError):
+            corps = json.loads(detail)
+            detail = corps.get("message") or detail
+            # Le détail (ex. « name already exists on this account ») est dans le tableau « errors »
+            precisions = [str(x.get("message") or x.get("code") or "") if isinstance(x, dict) else str(x)
+                          for x in (corps.get("errors") or [])]
+            precisions = [p for p in precisions if p]
+            if precisions:
+                detail = f"{detail} ({' ; '.join(precisions)})"
+        except (ValueError, AttributeError, TypeError):
             pass
         raise DevError(f"GitHub a répondu {e.code} : {str(detail)[:200]}. Vérifie DEV_GITHUB_TOKEN "
                        "(accès au dépôt agent-dev, droits Actions et Contents en écriture).", e.code)
@@ -123,7 +130,12 @@ def submit(depot, demande):
     return ref
 
 
-def cle_agent_erreur(cle):
+def nom_module(cle):
+    """Nom du module Python d'un agent hébergé dans l'agent chef : la clé, tirets remplacés par des soulignés."""
+    return str(cle or "").replace("-", "_")
+
+
+def cle_agent_erreur(cle, hebergement="depot"):
     """Renvoie la raison pour laquelle une clé de nouvel agent est refusée, ou None si elle convient."""
     if not CLE_AGENT.fullmatch(cle or "") or len(cle) > 60:
         return "La clé doit avoir la forme agent-xxx (minuscules, chiffres et tirets)."
@@ -131,6 +143,10 @@ def cle_agent_erreur(cle):
         return "agent-dev est réservé à l'agent développeur."
     if cle in depots():
         return f"Le dépôt {cle} existe déjà dans la liste : je ne touche jamais à un dépôt existant."
+    if hebergement == "chef" and os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                             nom_module(cle) + ".py")):
+        return (f"Le fichier {nom_module(cle)}.py existe déjà dans l'agent chef : "
+                "je ne remplace jamais un module existant.")
     return None
 
 
@@ -189,6 +205,31 @@ def creer_agent(cle, libelle, description):
         return submit(cle, demande)
     except DevError as e:
         raise echec(2, e)
+
+
+def creer_module(cle, libelle, description):
+    """Crée un nouvel agent comme module de l'agent chef : aucun dépôt, depots.json inchangé ; une seule
+    demande de développement sur agent-manager. Renvoie la référence de la demande."""
+    cle, libelle = str(cle or "").strip(), " ".join(str(libelle or "").split())[:80]
+    description = str(description or "").replace("\r", "").strip()[:3000]
+    raison = cle_agent_erreur(cle, "chef")
+    if raison:
+        raise DevError(raison)
+    if not libelle or len(description) < 10:
+        raise DevError("Il manque le libellé ou la description de l'agent.")
+    if not configured():
+        raise DevError("Agent développeur non configuré : ajoute la variable DEV_GITHUB_TOKEN (voir README).")
+    mod = nom_module(cle)
+    demande = (f"Crée un nouvel agent « {libelle} » comme module de l'agent chef, sur le modèle de devops.py :\n"
+               f"1. un fichier {mod}.py à la racine, avec la bibliothèque standard autant que possible ;\n"
+               f"2. une nouvelle action dans le routeur de chef.py, avec une description claire de quand "
+               f"l'utiliser, et la réponse affichée dans la discussion ;\n"
+               f"3. des tests test_{mod}.py avec les services externes simulés ;\n"
+               "4. une section dans le README et, s'il faut des variables d'environnement, leur déclaration "
+               "dans render.yaml ;\n"
+               "5. sans modifier le comportement des agents et actions existants.\n\n"
+               "Ce que l'agent doit faire :\n" + description)
+    return submit("agent-manager", demande)
 
 
 def report(body):

@@ -3,10 +3,12 @@
 Lancement : python -m unittest test_dev -v
 """
 import base64
+import io
 import json
 import os
 import tempfile
 import unittest
+import urllib.error
 from unittest import mock
 
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="test-chef-")
@@ -152,7 +154,7 @@ class CreerAgentTest(unittest.TestCase):
             self.addCleanup(p.stop)
         self.plan = {"action": "creer_agent", "cle_depot": "agent-veille", "libelle": "Agent veille",
                      "description_agent": "Surveille des sites et envoie un résumé chaque matin.",
-                     "reponse": "", "a_retenir": []}
+                     "hebergement": "depot", "reponse": "", "a_retenir": []}
 
     def _demander(self):
         with mock.patch.object(chef.llm, "ask_json", return_value=self.plan):
@@ -181,6 +183,37 @@ class CreerAgentTest(unittest.TestCase):
         self.assertEqual(entree["depot"], "agent-veille")
         for mot in ("vide", "/healthz", "test_*.py", "README", "Surveille des sites"):
             self.assertIn(mot, entree["demande"])
+
+    def test_hebergement_par_defaut_dans_l_agent_chef(self):
+        del self.plan["hebergement"]   # absent : « chef » par défaut
+        r = self._demander()
+        self.assertIn("module de l'agent chef", r["answer"])
+        self.assertNotIn("dépôt privé", r["answer"])
+        self.assertEqual(self.appels, [])
+        r = chef.chat("oui")
+        self.assertIn("module de l'agent chef", r["answer"])
+        self.assertEqual(len(self.appels), 1)   # ni dépôt ni depots.json : une seule demande
+        self.assertEqual(self.appels[0][1], "/actions/workflows/developpeur.yml/dispatches")
+        entree = self.appels[0][2]["inputs"]
+        self.assertEqual(entree["depot"], "agent-manager")
+        for mot in ("agent_veille.py", "test_agent_veille.py", "devops.py", "chef.py", "render.yaml",
+                    "README", "Surveille des sites"):
+            self.assertIn(mot, entree["demande"])
+        self.assertEqual(self.fichier, {"agent-emploi": {"depot": "AnthonyStocko/agent-emploi",
+                                                        "nom": "Agent emploi"}})
+
+    def test_hebergement_depot_explicite_affiche_le_depot(self):
+        self.assertIn("dépôt privé AnthonyStocko/agent-veille", self._demander()["answer"])
+
+    def test_module_deja_existant_refuse(self):
+        self.plan["hebergement"] = "chef"
+        self.plan["cle_depot"] = "agent-s"   # agent_s.py n'existe pas : accepté
+        self.assertIn("à confirmer", self._demander()["answer"])
+        with mock.patch.object(dev.os.path, "exists", return_value=True):
+            self.plan["cle_depot"] = "agent-veille"
+            r = self._demander()["answer"]
+        self.assertIn("agent_veille.py existe déjà", r)
+        self.assertEqual(self.appels, [])
 
     def test_cle_invalide_ou_existante(self):
         for cle in ("veille", "Agent-Veille", "agent-", "agent-dev", "agent-emploi", "agent veille", "agent-a/../b"):
@@ -223,6 +256,24 @@ class CreerAgentTest(unittest.TestCase):
         with mock.patch.object(chef.llm, "ask_json", return_value={"action": "repondre", "reponse": "ok"}):
             self.assertNotIn("Agent créé", chef.chat("oui")["answer"])   # plus rien en attente
         self.assertEqual(self.appels, [])
+
+
+class ErreurGithubTest(unittest.TestCase):
+    """Lecture du détail d'une erreur GitHub (tableau « errors »), sans simuler _github."""
+
+    def test_nom_deja_pris_lu_dans_errors(self):
+        with mock.patch.dict(os.environ, {"DEV_GITHUB_TOKEN": "ghp_secret"}):
+            self._appel()
+
+    def _appel(self):
+        corps = json.dumps({"message": "Repository creation failed.",
+                            "errors": [{"resource": "Repository", "code": "custom",
+                                        "field": "name", "message": "name already exists on this account"}]})
+        erreur = urllib.error.HTTPError("u", 422, "x", {}, io.BytesIO(corps.encode()))
+        with mock.patch.object(dev.urllib.request, "urlopen", side_effect=erreur):
+            with self.assertRaises(dev.DevError) as cm:
+                dev._github("POST", "/user/repos", {}, racine=True)
+        self.assertIn("name already exists", str(cm.exception))
 
 
 if __name__ == "__main__":
