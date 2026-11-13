@@ -16,7 +16,9 @@ class AgentError(Exception):
 
 # Erreurs passagères (service qui se réveille ou redémarre, erreurs Cloudflare 52x) : on peut réessayer.
 TRANSIENT_CODES = {502, 503, 504, 520, 521, 522, 523, 524}
-RETRY_DELAY = 20  # secondes entre deux essais
+RETRY_DELAY = 30  # secondes entre deux essais
+# Agent emploi : un service endormi peut mettre plus d'une minute à se réveiller, on attend jusqu'à 3 minutes
+EMPLOI_RETRIES = 6
 
 
 def _call_retry(*args, retries=3, **kwargs):
@@ -88,9 +90,11 @@ class Emploi:
     def _api(self, path, body=None, timeout=240, retry=False):
         if not self.configured:
             raise AgentError("non configuré (variables EMPLOI_URL et HUB_TOKEN).")
-        call = _call_retry if retry else _call
         try:
-            return call(self.url + path, body, {"Authorization": "Bearer " + self.token}, timeout)
+            if retry:
+                return _call_retry(self.url + path, body, {"Authorization": "Bearer " + self.token}, timeout,
+                                   retries=EMPLOI_RETRIES)
+            return _call(self.url + path, body, {"Authorization": "Bearer " + self.token}, timeout)
         except AgentError as e:
             if e.code == 401:
                 raise AgentError("l'agent emploi refuse le jeton HUB_TOKEN (HTTP 401). Vérifie que HUB_TOKEN a la "
