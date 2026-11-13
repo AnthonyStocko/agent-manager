@@ -50,6 +50,27 @@ L'agent chef le commande :
 Configuration côté agent chef : la variable Render `DEV_GITHUB_TOKEN` (le jeton GitHub créé pour
 agent-dev, voir son README). `HUB_TOKEN` doit avoir la même valeur dans les secrets d'agent-dev.
 
+## Devops : vérifier les déploiements
+
+« Est-ce que le correctif de l'agent emploi est en ligne ? » dans la discussion, ou le bouton
+**Vérifier les déploiements** de l'onglet Développeur : pour l'agent chef, l'agent emploi et l'agent
+perso, le commit en ligne sur Render est comparé au dernier commit de `main` sur GitHub.
+
+| Verdict | Sens |
+|---|---|
+| ✅ à jour | le dernier commit GitHub est en ligne |
+| ⚠️ commit différent | ce qui est en ligne n'est pas le dernier commit |
+| ❌ échec | le dernier déploiement a échoué (le commit resté en ligne est indiqué) |
+| ⏳ en cours | un déploiement est en cours |
+
+Lecture seule : rien n'est modifié sur Render ni sur GitHub. L'agent développeur (GitHub Actions) et
+l'agent Instagram (Supabase) ne sont pas sur Render et ne sont pas suivis.
+
+Variables Render de l'agent chef : `RENDER_API_KEY` (Account Settings > API Keys ; elle donne accès à
+tout le compte Render, garde-la uniquement ici), `RENDER_SERVICE_AGENT_EMPLOI` et
+`RENDER_SERVICE_AGENT_PERSO` (identifiants `srv-…`, en haut de la page de chaque service). Le service
+de l'agent chef est reconnu tout seul, et GitHub est lu avec `DEV_GITHUB_TOKEN`.
+
 ## Comment la mémoire s'enrichit
 
 1. Un agent signale un événement : offre écartée ou retenue, texte corrigé à la main, entretien
@@ -104,4 +125,5 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
 - `memory.py` : mémoire et extraction des souvenirs — `agents.py` : connexion aux agents
 - `dev.py` : commande de l'agent développeur (dépôt agent-dev)
+- `devops.py` : vérification des déploiements Render
 - `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Claude Code — `static/` : interface

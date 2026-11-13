@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import agents
 import db
 import dev
+import devops
 import files
 import llm
 import memory
@@ -228,7 +229,7 @@ CONVERSATION RÉCENTE :
 NOUVEAU MESSAGE : {message}
 
 Choisis UNE action et réponds en JSON :
-{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "reponse": "", "a_retenir": []}}
+{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "agent_devops": "", "reponse": "", "a_retenir": []}}
 
 Actions :
 - "repondre" : tu réponds toi-même dans "reponse" (conseil, question sur elle, sur ses offres déjà
@@ -258,6 +259,9 @@ Actions :
   cette conversation : ce qui doit changer, le comportement attendu, les exemples donnés. Si le dépôt
   visé ou le changement voulu n'est pas clair, utilise "repondre" pour le demander. Une demande
   d'utiliser un agent (chercher des offres, traiter les mails) n'est pas une demande de développement.
+- "devops_deploiements" : elle veut savoir si un correctif ou la dernière version d'un agent est bien
+  déployé, en ligne, à jour sur Render. Mets dans "agent_devops" la clé de l'agent visé ("manager" pour
+  l'agent chef, "emploi", "perso"), ou une chaîne vide pour les vérifier tous. Lecture seule.
 Avec une pièce jointe et une demande de mail, choisis "perso" : le document sera joint au brouillon au
 moment de la confirmation. Tu ne vois pas le contenu de la pièce jointe : ne le devine pas, et si son
 usage n'est pas clair, demande-le avec "repondre" (elle reste disponible quelques minutes).
@@ -403,6 +407,12 @@ def chat(message, file=None):
                 _summary_cache["value"] = None
                 answer = ("Offre ajoutée à ton suivi. Dis « note les nouvelles offres » ou ouvre l'agent emploi "
                           "pour la noter." if r.get("new") else "Cette offre est déjà dans ton suivi.")
+        elif action == "devops_deploiements":
+            agent_used = "devops"
+            try:
+                answer = devops.text(devops.deployments(plan.get("agent_devops")))
+            except devops.DevopsError as e:
+                answer = str(e)
         elif action == "dev":
             agent_used = "dev"
             depot, demande = str(plan.get("depot") or "").strip(), str(plan.get("demande_dev") or "").strip()

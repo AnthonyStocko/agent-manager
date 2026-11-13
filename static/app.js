@@ -34,7 +34,7 @@ function md(src) {
   flush(); endList(); return html;
 }
 const safeUrl = (u) => (/^https?:\/\//i.test(u || "") ? u : "");
-const AGENT_NAMES = { emploi: "via l'agent emploi", perso: "via l'agent perso", instagram: "via l'agent Instagram", chef: "point du matin", dev: "agent développeur" };
+const AGENT_NAMES = { emploi: "via l'agent emploi", perso: "via l'agent perso", instagram: "via l'agent Instagram", chef: "point du matin", dev: "agent développeur", devops: "devops" };
 
 // ---------- onglets ----------
 const loaders = { chat: loadChat, board: loadBoard, memory: loadMemory, dev: loadDev };
@@ -236,6 +236,14 @@ async function loadDev() {
   if (r.items.some((d) => d.statut === "en_cours"))
     devTimer = setTimeout(() => { if (!$("#tab-dev").hidden) loadDev().catch(() => {}); }, 30000);
 }
+// Le commit en ligne sur Render est-il le dernier commit GitHub ? (lecture seule)
+const DEPLOY_DOT = { a_jour: "ok", commit_different: "warn", echec: "ko", erreur: "ko" };
+$("#dev-deploys").onclick = (e) => busy(e.target, "Vérification…", async () => {
+  const r = await api("/api/devops/deploiements"), out = $("#dev-deploys-out");
+  out.hidden = false;
+  out.innerHTML = `<p><strong>Déploiements Render${r.tout_est_a_jour ? " : tout est à jour" : ""}</strong></p>`
+    + r.agents.map((a) => `<p><span class="dot ${DEPLOY_DOT[a.verdict] || ""}"></span><strong>${esc(a.nom)}</strong> : ${esc(a.resume)}</p>`).join("");
+});
 $("#dev-refresh").onclick = (e) => busy(e.target, "Actualisation…", loadDev);
 $("#dev-send").onclick = (e) => busy(e.target, "Lancement…", async () => {
   const text = $("#dev-text").value.trim();
