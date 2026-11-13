@@ -47,6 +47,8 @@ def _call(url, body=None, headers=None, timeout=240, raw=None, with_headers=Fals
             detail = detail.get("error") or detail.get("detail") or text
         except (ValueError, AttributeError):
             detail = text
+        if "<html" in str(detail).lower() or "<!doctype" in str(detail).lower():
+            detail = "page d'erreur du service (il redémarre ou se réveille, réessaie dans une minute)"
         raise AgentError(f"HTTP {e.code} : {str(detail)[:300]}", e.code)
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise AgentError(f"injoignable ({getattr(e, 'reason', e)}). Sur l'offre gratuite de "
@@ -83,11 +85,12 @@ class Emploi:
     def configured(self):
         return bool(self.url and self.token)
 
-    def _api(self, path, body=None, timeout=240):
+    def _api(self, path, body=None, timeout=240, retry=False):
         if not self.configured:
             raise AgentError("non configuré (variables EMPLOI_URL et HUB_TOKEN).")
+        call = _call_retry if retry else _call
         try:
-            return _call(self.url + path, body, {"Authorization": "Bearer " + self.token}, timeout)
+            return call(self.url + path, body, {"Authorization": "Bearer " + self.token}, timeout)
         except AgentError as e:
             if e.code == 401:
                 raise AgentError("l'agent emploi refuse le jeton HUB_TOKEN (HTTP 401). Vérifie que HUB_TOKEN a la "
@@ -96,7 +99,8 @@ class Emploi:
             raise
 
     def summary(self):
-        return self._api("/api/summary", timeout=90)
+        # Lecture seule : on réessaie si l'agent se réveille (502 sur l'offre gratuite de Render)
+        return self._api("/api/summary", timeout=90, retry=True)
 
     def search(self):
         """Cherche de nouvelles offres puis les note."""
