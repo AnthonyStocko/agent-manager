@@ -28,6 +28,12 @@ services:
         sync: false
       - key: DEV_GITHUB_TOKEN         # agent développeur : jeton GitHub (voir le README d'agent-dev)
         sync: false
+      - key: RENDER_API_KEY           # devops : clé API Render (Account Settings > API Keys), lecture des déploiements
+        sync: false
+      - key: RENDER_SERVICE_AGENT_EMPLOI   # devops : identifiant srv-... du service agent-emploi
+        sync: false
+      - key: RENDER_SERVICE_AGENT_PERSO    # devops : identifiant srv-... du service agent-perso
+        sync: false
       - key: INSTAGRAM_URL            # facultatif : lien vers l'administration de l'agent Instagram
         sync: false
       - key: INSTAGRAM_TOKEN          # facultatif : jeton d'accès de l'agent Instagram (commentaires en attente)
