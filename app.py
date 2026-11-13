@@ -42,6 +42,7 @@ def api_get(path, query):
     if path == "/api/dashboard":
         return chef.dashboard()
     if path == "/api/messages":
+        dev.sync(30)   # comptes rendus de l'agent développeur arrivés entre-temps sur GitHub
         return {"messages": chef.history(), "auth": bool(os.getenv("APP_PASSWORD"))}
     if path == "/api/memories":
         return {"categories": memory.CATEGORIES, "items": memory.recall(limit=500),

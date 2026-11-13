@@ -7,6 +7,7 @@ protégée par HUB_TOKEN).
 """
 import base64
 import datetime
+import io
 import json
 import os
 import re
@@ -14,6 +15,7 @@ import secrets
 import time
 import urllib.error
 import urllib.request
+import zipfile
 
 import db
 
@@ -239,6 +241,8 @@ def report(body):
     rows = db.run("SELECT * FROM dev_requests WHERE ref = ?", (ref,))
     if statut not in STATUTS or statut == "en_cours":
         raise DevError("Statut inconnu.")
+    if rows and rows[0]["statut"] != "en_cours":
+        return {"ok": True}   # compte rendu déjà reçu par l'autre voie (envoi direct ou lecture sur GitHub)
     titre, resume = str(body.get("titre") or "")[:200], str(body.get("resume") or "")[:6000]
     pr_url, run_url = _lien(body.get("pr_url")), _lien(body.get("run_url"))
     noms = depots()
@@ -276,9 +280,45 @@ def _age(iso):
     return (datetime.datetime.now(datetime.timezone.utc) - then).total_seconds()
 
 
+class _SansRedirection(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None   # la redirection est suivie à la main, sans le jeton
+
+
+def _rapport_github(run_id):
+    """Compte rendu d'une exécution terminée, lu dans son artefact « rapport » (un zip contenant
+    rapport.json). Renvoie None s'il n'y en a pas."""
+    artefacts = _github("GET", f"/actions/runs/{int(run_id)}/artifacts").get("artifacts") or []
+    artefact = next((a for a in artefacts if a.get("name") == "rapport" and not a.get("expired")), None)
+    if not artefact:
+        return None
+    # GitHub répond par une redirection vers son stockage : le jeton ne doit pas y être envoyé
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{_repo()}/actions/artifacts/{int(artefact['id'])}/zip",
+        headers={"Authorization": "Bearer " + _token(), "Accept": "application/vnd.github+json",
+                 "User-Agent": "agent-chef/1.0"})
+    try:
+        try:
+            with urllib.request.build_opener(_SansRedirection).open(req, timeout=30) as resp:
+                data = resp.read(2_000_000)
+        except urllib.error.HTTPError as e:
+            cible = e.headers.get("Location") if e.code in (301, 302, 303, 307) else None
+            if not cible or not cible.startswith("https://"):
+                raise DevError(f"GitHub a répondu {e.code} en lisant le compte rendu.")
+            with urllib.request.urlopen(urllib.request.Request(cible, headers={"User-Agent": "agent-chef/1.0"}),
+                                        timeout=30) as resp:
+                data = resp.read(2_000_000)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            body = json.loads(archive.read("rapport.json").decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError, zipfile.BadZipFile):
+        raise DevError("Compte rendu illisible sur GitHub.")
+    return body if isinstance(body, dict) else None
+
+
 def _refresh(pending):
-    """Demandes encore « en cours » : retrouve leur exécution GitHub (lien vers le journal) et repère
-    celles qui se sont terminées sans envoyer de compte rendu."""
+    """Demandes encore « en cours » : retrouve leur exécution GitHub (lien vers le journal). Si elle
+    est terminée, lit son compte rendu sur GitHub (l'envoi direct à l'agent chef peut ne pas arriver),
+    et à défaut la signale comme terminée sans compte rendu."""
     runs = _github("GET", f"/actions/workflows/{WORKFLOW}/runs?per_page=40").get("workflow_runs") or []
     for row in pending:
         run = next((r for r in runs if str(r.get("display_title") or "").startswith(f"dev-{row['ref']} ")), None)
@@ -289,6 +329,14 @@ def _refresh(pending):
                         "agent-dev.", db.now(), row["ref"]))
             continue
         url = _lien(run.get("html_url"))
+        if run.get("status") == "completed":
+            try:
+                body = _rapport_github(run["id"])
+                if body:
+                    report({**body, "id": row["ref"], "run_url": url})
+                    continue
+            except (DevError, KeyError, TypeError, ValueError):
+                pass   # on réessaiera au prochain passage, puis l'erreur ci-dessous prendra le relais
         if run.get("status") == "completed" and _age(run.get("updated_at")) > 5 * 60:
             db.run("UPDATE dev_requests SET statut = 'erreur', resume = ?, run_url = ?, updated_at = ? WHERE ref = ?",
                    (f"Le travail s'est terminé ({run.get('conclusion')}) sans envoyer de compte rendu : "
@@ -297,15 +345,28 @@ def _refresh(pending):
             db.run("UPDATE dev_requests SET run_url = ? WHERE ref = ?", (url, row["ref"]))
 
 
+_sync_at = [0.0]
+
+
+def sync(min_interval=0):
+    """Met à jour les demandes en cours depuis GitHub. Renvoie un message d'erreur, ou une chaîne vide.
+    `min_interval` : ne rien faire si le dernier passage date de moins de tant de secondes."""
+    if not configured() or time.time() - _sync_at[0] < min_interval:
+        return ""
+    rows = db.run("SELECT * FROM dev_requests WHERE statut = 'en_cours' ORDER BY created_at DESC LIMIT 30")
+    pending = [r for r in rows if _age(r["created_at"]) > 20]
+    if not pending:
+        return ""
+    _sync_at[0] = time.time()
+    try:
+        _refresh(pending)
+    except DevError as e:
+        return str(e)
+    return ""
+
+
 def listing():
+    note = sync()
     rows = db.run("SELECT * FROM dev_requests ORDER BY created_at DESC LIMIT 30")
-    pending = [r for r in rows if r["statut"] == "en_cours" and _age(r["created_at"]) > 20]
-    note = ""
-    if pending and configured():
-        try:
-            _refresh(pending)
-            rows = db.run("SELECT * FROM dev_requests ORDER BY created_at DESC LIMIT 30")
-        except DevError as e:
-            note = str(e)
     return {"configured": configured(), "depots": depots(), "items": rows, "note": note,
             "actions_url": f"https://github.com/{_repo()}/actions/workflows/{WORKFLOW}"}

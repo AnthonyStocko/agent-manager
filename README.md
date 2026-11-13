@@ -46,6 +46,9 @@ L'agent chef le commande :
   (en cours, fusionnée, à relire, en échec) avec les liens vers la pull request et le journal ;
 - **discussion** : « dans l'agent emploi, trie les offres par date », puis « oui » pour lancer ;
 - le compte rendu de l'agent développeur arrive dans la discussion à la fin du travail.
+  Il est envoyé par agent-dev ; si cet envoi n'arrive pas (agent chef endormi, accès refusé par
+  l'hébergeur), l'agent chef va le lire lui-même sur GitHub à l'ouverture de la discussion ou de
+  l'onglet Développeur.
 
 ### Créer un nouvel agent
 

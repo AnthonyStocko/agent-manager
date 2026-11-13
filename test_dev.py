@@ -9,6 +9,7 @@ import os
 import tempfile
 import unittest
 import urllib.error
+import zipfile
 from unittest import mock
 
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="test-chef-")
@@ -107,6 +108,63 @@ class DevTest(unittest.TestCase):
         item = dev.listing()["items"][0]
         self.assertEqual(item["statut"], "erreur")
         self.assertIn("sans envoyer de compte rendu", item["resume"])
+
+    def _demande_terminee(self):
+        ref = dev.submit("agent-emploi", "Trie les offres par date de publication")
+        db.run("UPDATE dev_requests SET created_at = ? WHERE ref = ?", ("2026-01-01T00:00:00+00:00", ref))
+        self.runs = [{"id": 77, "display_title": f"dev-{ref} · agent-emploi", "status": "completed",
+                      "conclusion": "success", "updated_at": "2026-01-01T00:10:00Z",
+                      "html_url": "https://github.com/AnthonyStocko/agent-dev/actions/runs/77"}]
+        return ref
+
+    def test_compte_rendu_lu_sur_github_quand_l_envoi_direct_n_arrive_pas(self):
+        ref = self._demande_terminee()
+        rapport = {"id": ref, "depot": "agent-emploi", "statut": "fusionne", "titre": "Offres triées",
+                   "resume": "Tri par date.", "pr_url": "https://github.com/AnthonyStocko/agent-emploi/pull/4"}
+        with mock.patch.object(dev, "_rapport_github", return_value=rapport) as lecture:
+            dev._sync_at[0] = 0.0
+            app.api_get("/api/messages", {})   # l'ouverture de la discussion suffit à le récupérer
+        lecture.assert_called_once_with(77)
+        item = dev.listing()["items"][0]
+        self.assertEqual((item["statut"], item["titre"], item["run_url"][-7:]), ("fusionne", "Offres triées", "runs/77"))
+        messages = [m for m in chef.history() if m["agent"] == "dev"]
+        self.assertEqual(len(messages), 1)
+        self.assertIn("pull/4", messages[0]["content"])
+        # L'envoi direct qui arriverait ensuite ne crée pas de doublon
+        dev.report(rapport)
+        self.assertEqual(len([m for m in chef.history() if m["agent"] == "dev"]), 1)
+
+    def test_sans_compte_rendu_sur_github_la_demande_passe_en_erreur(self):
+        self._demande_terminee()
+        with mock.patch.object(dev, "_rapport_github", return_value=None):
+            item = dev.listing()["items"][0]
+        self.assertEqual(item["statut"], "erreur")
+        self.assertIn("sans envoyer de compte rendu", item["resume"])
+
+    def test_lecture_de_l_artefact_sans_envoyer_le_jeton_au_stockage(self):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as z:
+            z.writestr("rapport.json", json.dumps({"statut": "fusionne", "titre": "Été"}, ensure_ascii=False))
+        vus = []
+
+        class Ouvreur:
+            def open(self, req, timeout=0):
+                vus.append((req.full_url, req.get_header("Authorization")))
+                raise urllib.error.HTTPError(req.full_url, 302, "Found", {"Location": "https://stockage.example/zip"}, None)
+
+        def stockage(req, timeout=0):
+            vus.append((req.full_url, req.get_header("Authorization")))
+            return io.BytesIO(archive.getvalue())
+
+        artefacts = {"artifacts": [{"id": 5, "name": "autre"}, {"id": 9, "name": "rapport", "expired": False}]}
+        with mock.patch.object(dev, "_github", lambda *a: artefacts), \
+                mock.patch.object(dev.urllib.request, "build_opener", lambda *a: Ouvreur()), \
+                mock.patch.object(dev.urllib.request, "urlopen", stockage):
+            self.assertEqual(dev._rapport_github(77), {"statut": "fusionne", "titre": "Été"})
+        self.assertEqual(vus, [("https://api.github.com/repos/AnthonyStocko/agent-dev/actions/artifacts/9/zip", "Bearer ghp_test"),
+                               ("https://stockage.example/zip", None)])
+        with mock.patch.object(dev, "_github", lambda *a: {"artifacts": []}):
+            self.assertIsNone(dev._rapport_github(77))
 
     def test_discussion_demande_confirmation_avant_de_lancer(self):
         plan = {"action": "dev", "depot": "agent-emploi", "demande_dev": "Trie les offres par date de publication",
