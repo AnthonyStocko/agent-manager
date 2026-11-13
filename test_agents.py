@@ -66,6 +66,19 @@ class Emploi502Test(unittest.TestCase):
                 mock.patch.object(agents, "_call", fake), mock.patch.object(agents.time, "sleep"):
             self.assertEqual(agents.Emploi().search(), ({"a": {"new": 1}}, {"scored": 2}))
 
+    def test_502_persistant_attend_trois_minutes(self):
+        appels = []
+
+        def fake(*a, **k):
+            appels.append(1)
+            raise agents.AgentError("HTTP 502 : x", 502)
+        with mock.patch.dict(agents.os.environ, {"EMPLOI_URL": "https://e", "HUB_TOKEN": "t"}), \
+                mock.patch.object(agents, "_call", fake), mock.patch.object(agents.time, "sleep") as sleep:
+            with self.assertRaises(agents.AgentError):
+                agents.Emploi().summary()
+        self.assertEqual(len(appels), agents.EMPLOI_RETRIES + 1)
+        self.assertGreaterEqual(sleep.call_count * agents.RETRY_DELAY, 180)
+
     def test_page_html_non_affichee(self):
         import io
         import urllib.error
