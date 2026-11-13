@@ -19,7 +19,7 @@ TRANSIENT_CODES = {502, 503, 504, 520, 521, 522, 523, 524}
 RETRY_DELAY = 20  # secondes entre deux essais
 
 
-def _call_retry(*args, retries=2, **kwargs):
+def _call_retry(*args, retries=3, **kwargs):
     """Comme _call, mais réessaie après une erreur passagère. À réserver aux appels sans écriture."""
     for attempt in range(retries + 1):
         try:
@@ -104,8 +104,9 @@ class Emploi:
 
     def search(self):
         """Cherche de nouvelles offres puis les note."""
-        report = self._api("/api/collect", {})
-        scored = self._api("/api/score", {}, timeout=900)
+        # Recherche et notation sont relançables sans risque (les offres déjà connues ne sont pas dupliquées)
+        report = self._api("/api/collect", {}, retry=True)
+        scored = self._api("/api/score", {}, timeout=900, retry=True)
         return report, scored
 
     def generate(self, offer_id):

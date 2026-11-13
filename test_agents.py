@@ -22,7 +22,7 @@ class RetryTest(unittest.TestCase):
                 mock.patch.object(agents.time, "sleep"):
             with self.assertRaises(agents.AgentError):
                 agents._call_retry("u")
-            self.assertEqual(c.call_count, 3)
+            self.assertEqual(c.call_count, 4)
 
     def test_pas_de_nouvel_essai_pour_401(self):
         with mock.patch.object(agents, "_call", side_effect=agents.AgentError("HTTP 401", 401)) as c:
@@ -53,6 +53,18 @@ class Emploi502Test(unittest.TestCase):
         with mock.patch.dict(agents.os.environ, {"EMPLOI_URL": "https://e", "HUB_TOKEN": "t"}), \
                 mock.patch.object(agents, "_call", fake), mock.patch.object(agents.time, "sleep"):
             self.assertEqual(agents.Emploi().summary(), {"top": []})
+
+    def test_search_reessaie_apres_502(self):
+        calls = [agents.AgentError("HTTP 502 : x", 502), {"a": {"new": 1}}, {"scored": 2}]
+
+        def fake(*a, **k):
+            r = calls.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+        with mock.patch.dict(agents.os.environ, {"EMPLOI_URL": "https://e", "HUB_TOKEN": "t"}), \
+                mock.patch.object(agents, "_call", fake), mock.patch.object(agents.time, "sleep"):
+            self.assertEqual(agents.Emploi().search(), ({"a": {"new": 1}}, {"scored": 2}))
 
     def test_page_html_non_affichee(self):
         import io
