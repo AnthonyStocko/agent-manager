@@ -229,7 +229,7 @@ CONVERSATION RÉCENTE :
 NOUVEAU MESSAGE : {message}
 
 Choisis UNE action et réponds en JSON :
-{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "agent_devops": "", "reponse": "", "a_retenir": []}}
+{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "cle_depot": "", "libelle": "", "description_agent": "", "agent_devops": "", "reponse": "", "a_retenir": []}}
 
 Actions :
 - "repondre" : tu réponds toi-même dans "reponse" (conseil, question sur elle, sur ses offres déjà
@@ -259,6 +259,11 @@ Actions :
   cette conversation : ce qui doit changer, le comportement attendu, les exemples donnés. Si le dépôt
   visé ou le changement voulu n'est pas clair, utilise "repondre" pour le demander. Une demande
   d'utiliser un agent (chercher des offres, traiter les mails) n'est pas une demande de développement.
+- "creer_agent" : elle demande de CRÉER un nouvel agent (« crée un agent qui fait X »). Mets dans
+  "cle_depot" la clé du futur dépôt (forme agent-xxx : minuscules, chiffres et tirets, jamais agent-dev),
+  dans "libelle" un nom court, et dans "description_agent" la description complète de ce que l'agent doit
+  faire (le développeur ne voit pas cette conversation). Si le rôle de l'agent n'est pas clair, utilise
+  "repondre" pour poser la question.
 - "devops_deploiements" : elle veut savoir si un correctif ou la dernière version d'un agent est bien
   déployé, en ligne, à jour sur Render. Mets dans "agent_devops" la clé de l'agent visé ("manager" pour
   l'agent chef, "emploi", "perso"), ou une chaîne vide pour les vérifier tous. Lecture seule.
@@ -285,6 +290,19 @@ def _dev_confirm(state, confirmed):
             "dans l'onglet Développeur.")
 
 
+def _creer_confirm(state, confirmed):
+    _set_pending("dev_creer", None)
+    if not confirmed:
+        return "Création annulée, rien n'a été fait."
+    try:
+        ref = dev.creer_agent(state["cle"], state["libelle"], state["description"])
+    except dev.DevError as e:
+        return str(e)
+    return (f"**Agent créé** : dépôt privé AnthonyStocko/{state['cle']} créé, ajouté à la liste des dépôts, et "
+            f"développement lancé (référence {ref}). L'agent développeur travaille dans GitHub Actions, en général "
+            "5 à 20 minutes : son compte rendu arrivera dans cette discussion à la fin du travail.")
+
+
 def _direct(message, shown, answer, agent):
     _save("user", shown)
     _save("assistant", answer, agent)
@@ -299,7 +317,10 @@ def chat(message, file=None):
     shown = (message + f"\n[pièce jointe : {file['name']}]").strip() if file else message
     # Réponse à une demande de confirmation de l'agent perso : traitée sans passer par le modèle
     expense, confirm, devel = _pending("perso_expense"), _pending("perso_confirm"), _pending("dev_confirm")
+    creer = _pending("dev_creer")
     if not file and (YES.match(message) or NO.match(message)):
+        if creer:
+            return _direct(message, shown, _creer_confirm(creer, bool(YES.match(message))), "dev")
         if devel:
             return _direct(message, shown, _dev_confirm(devel, bool(YES.match(message))), "dev")
         if expense:
@@ -312,6 +333,8 @@ def chat(message, file=None):
         _set_pending("perso_confirm", None)
     if devel:
         _set_pending("dev_confirm", None)
+    if creer:
+        _set_pending("dev_creer", None)
     if file:
         _hold(file)
         if not message:
@@ -426,6 +449,23 @@ def chat(message, file=None):
                 answer = (f"**Demande pour l'agent développeur** — à confirmer :\n- Dépôt : {dev.depots()[depot]}\n"
                           f"- Demande : {demande}\n\nSi les vérifications passent, la modification est fusionnée "
                           "et déployée sans relecture. Réponds **oui** pour lancer, **non** pour annuler.")
+        elif action == "creer_agent":
+            agent_used = "dev"
+            cle = str(plan.get("cle_depot") or "").strip()
+            libelle = " ".join(str(plan.get("libelle") or "").split())[:80]
+            description = str(plan.get("description_agent") or "").strip()[:3000]
+            if not dev.configured():
+                answer = "L'agent développeur n'est pas configuré : ajoute la variable DEV_GITHUB_TOKEN (voir README)."
+            elif not libelle or len(description) < 10:
+                answer = "Que doit faire ce nouvel agent ? Décris son rôle en quelques phrases."
+            elif dev.cle_agent_erreur(cle):
+                answer = f"Je ne peux pas créer l'agent « {libelle} » : {dev.cle_agent_erreur(cle)}"
+            else:
+                _set_pending("dev_creer", {"cle": cle, "libelle": libelle, "description": description})
+                answer = (f"**Création d'un nouvel agent** — à confirmer :\n- Dépôt : {dev.PROPRIETAIRE}/{cle} "
+                          f"(privé, vide)\n- Libellé : {libelle}\n- Description : {description}\n\n"
+                          "Je crée le dépôt, je l'ajoute à la liste de l'agent développeur, puis je lance son "
+                          "développement. Réponds **oui** pour lancer, **non** pour annuler.")
         elif action == "perso":
             agent_used = "perso"
             text = str(plan.get("demande_perso") or message)
