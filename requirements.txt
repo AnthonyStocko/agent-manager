@@ -2,4 +2,4 @@ psycopg[binary]
 pypdf
 # Agent devops : son dépôt, à un commit précis. Pour prendre une version plus récente, remplace le commit
 # par le dernier de la branche main d'agent-devops-perso.
-agent-devops @ https://github.com/AnthonyStocko/agent-devops-perso/archive/35533bc227b223efa705cd4a90653d380075ef8c.zip
+agent-devops @ https://github.com/AnthonyStocko/agent-devops-perso/archive/17916d57e08efebee424b4a8971404bccdcdc04d.zip

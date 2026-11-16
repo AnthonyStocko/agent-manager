@@ -28,7 +28,7 @@ services:
         sync: false
       - key: DEV_GITHUB_TOKEN         # agent développeur : jeton GitHub (voir le README d'agent-dev)
         sync: false
-      - key: RENDER_API_KEY           # devops : clé API Render (Account Settings > API Keys), lecture des déploiements
+      - key: RENDER_API_KEY           # devops : clé API Render (Account Settings > API Keys) : déploiements et variables
         sync: false
       - key: RENDER_SERVICE_AGENT_EMPLOI   # devops : identifiant srv-... du service agent-emploi
         sync: false
