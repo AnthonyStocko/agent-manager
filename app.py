@@ -22,8 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import agents
 import chef
 import db
+import agent_devops as devops   # dépôt agent-devops-perso, installé par requirements.txt
 import dev
-import devops
 import files
 import llm
 import memory
@@ -50,7 +50,7 @@ def api_get(path, query):
     if path == "/api/dev":
         return dev.listing()
     if path == "/api/devops/deploiements":
-        return devops.deployments((query.get("agent") or [""])[0], (query.get("commit") or [""])[0])
+        return devops.verifier_deploiements((query.get("agent") or [""])[0], (query.get("commit") or [""])[0])
     raise ApiError("Route inconnue.", 404)
 
 
@@ -236,7 +236,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, fn(*args))
         except ApiError as e:
             self._send(e.code, {"error": str(e)})
-        except (llm.LLMError, agents.AgentError, dev.DevError, devops.DevopsError, files.ImportError_, ValueError) as e:
+        except (llm.LLMError, agents.AgentError, dev.DevError, devops.ErreurDevops, files.ImportError_, ValueError) as e:
             self._send(400, {"error": str(e)})
         except Exception as e:
             print(f"Erreur interne : {e!r}", flush=True)

@@ -254,7 +254,7 @@ class CreerAgentTest(unittest.TestCase):
         self.assertEqual(self.appels[0][1], "/actions/workflows/developpeur.yml/dispatches")
         entree = self.appels[0][2]["inputs"]
         self.assertEqual(entree["depot"], "agent-manager")
-        for mot in ("agent_veille.py", "test_agent_veille.py", "devops.py", "chef.py", "render.yaml",
+        for mot in ("agent_veille.py", "test_agent_veille.py", "chef.py", "render.yaml",
                     "README", "Surveille des sites"):
             self.assertIn(mot, entree["demande"])
         self.assertEqual(self.fichier, {"agent-emploi": {"depot": "AnthonyStocko/agent-emploi",

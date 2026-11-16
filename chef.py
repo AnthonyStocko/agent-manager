@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo
 
 import agents
 import db
+import agent_devops as devops   # dépôt agent-devops-perso, installé par requirements.txt
 import dev
-import devops
 import files
 import llm
 import memory
@@ -443,8 +443,8 @@ def chat(message, file=None):
         elif action == "devops_deploiements":
             agent_used = "devops"
             try:
-                answer = devops.text(devops.deployments(plan.get("agent_devops")))
-            except devops.DevopsError as e:
+                answer = devops.texte(devops.verifier_deploiements(plan.get("agent_devops")))
+            except devops.ErreurDevops as e:
                 answer = str(e)
         elif action == "dev":
             agent_used = "dev"

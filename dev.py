@@ -222,7 +222,7 @@ def creer_module(cle, libelle, description):
     if not configured():
         raise DevError("Agent développeur non configuré : ajoute la variable DEV_GITHUB_TOKEN (voir README).")
     mod = nom_module(cle)
-    demande = (f"Crée un nouvel agent « {libelle} » comme module de l'agent chef, sur le modèle de devops.py :\n"
+    demande = (f"Crée un nouvel agent « {libelle} » comme module de l'agent chef :\n"
                f"1. un fichier {mod}.py à la racine, avec la bibliothèque standard autant que possible ;\n"
                f"2. une nouvelle action dans le routeur de chef.py, avec une description claire de quand "
                f"l'utiliser, et la réponse affichée dans la discussion ;\n"
