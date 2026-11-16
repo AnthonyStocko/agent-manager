@@ -59,8 +59,7 @@ tu demandes explicitement un agent dans son propre dépôt.
 
 **Par défaut (`chef`) : l'agent est un module de l'agent chef.** Récapitulatif : « module de l'agent
 chef ». Aucun dépôt n'est créé, `depots.json` n'est pas modifié. Après « oui », une seule demande de
-développement part sur agent-manager (`dev.submit`) : l'agent développeur crée, sur le modèle de
-`devops.py`, un fichier `<nom_du_module>.py` à la racine (clé avec tirets remplacés par des soulignés,
+développement part sur agent-manager (`dev.submit`) : l'agent développeur crée un fichier `<nom_du_module>.py` à la racine (clé avec tirets remplacés par des soulignés,
 bibliothèque standard autant que possible), une nouvelle action dans le routeur de `chef.py` (réponse
 affichée dans la discussion), des tests `test_<nom_du_module>.py` avec services externes simulés, une
 section du README et, si besoin, les variables d'environnement dans `render.yaml`, sans toucher aux
@@ -85,6 +84,11 @@ Configuration côté agent chef : la variable Render `DEV_GITHUB_TOKEN` (le jeto
 agent-dev, voir son README). `HUB_TOKEN` doit avoir la même valeur dans les secrets d'agent-dev.
 
 ## Devops : vérifier les déploiements
+
+Le devops est un agent à part, [agent-devops-perso](https://github.com/AnthonyStocko/agent-devops-perso) :
+son code vit dans son dépôt et l'agent chef l'installe comme dépendance (`requirements.txt`), à un commit
+précis. Il tourne donc dans le service Render de l'agent chef, sans service supplémentaire. Pour prendre
+une version plus récente de l'agent devops, remplace ce commit dans `requirements.txt`.
 
 « Est-ce que le correctif de l'agent emploi est en ligne ? » dans la discussion, ou le bouton
 **Vérifier les déploiements** de l'onglet Développeur : pour l'agent chef, l'agent emploi et l'agent
@@ -140,7 +144,7 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 
 ## En local
 
-    pip install -r requirements.txt   # seulement si tu utilises Postgres
+    pip install -r requirements.txt   # Postgres, lecture des PDF et agent devops
     python app.py                     # http://127.0.0.1:8770, base SQLite locale
 
 ## À savoir
@@ -159,5 +163,5 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
 - `memory.py` : mémoire et extraction des souvenirs — `agents.py` : connexion aux agents
 - `dev.py` : commande de l'agent développeur (dépôt agent-dev)
-- `devops.py` : vérification des déploiements Render
+- vérification des déploiements Render : paquet `agent_devops`, installé depuis le dépôt agent-devops-perso
 - `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Claude Code — `static/` : interface
