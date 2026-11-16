@@ -1,6 +1,9 @@
 # Agent chef (agent-manager)
 
-L'agent qui chapeaute les autres. Cinq rôles :
+L'agent qui chapeaute les autres. La vue d'ensemble de tous les agents (qui fait quoi, qui appelle qui,
+où s'arrête chacun) est dans [ARCHITECTURE.md](ARCHITECTURE.md).
+
+Quatre missions propres :
 
 - **Mémoire commune** : il retient ce que tes agents apprennent de toi (goûts en offres, style
   d'écriture, récits d'expérience, points à travailler, profil, préférences) dans une base
@@ -8,14 +11,19 @@ L'agent qui chapeaute les autres. Cinq rôles :
 - **Point d'entrée unique** : tu lui parles, il répond lui-même ou confie la demande au bon agent.
 - **Tableau de bord** : l'état de tous tes agents sur une page.
 - **Initiatives** : un point du matin (recherche d'offres, notation, relances) lancé sans clic.
-- **Agent développeur** : tu décris une amélioration, il modifie le code de l'agent concerné, le
-  teste et le met en ligne (voir plus bas).
+
+Il commande aussi deux agents à part, chacun dans son dépôt :
+
+- **Agent développeur** (agent-dev) : tu décris une amélioration, il modifie le code de l'agent
+  concerné, le teste et le met en ligne (voir plus bas).
+- **Agent devops** (agent-devops-perso) : il vérifie que ce qui est en ligne sur Render correspond au
+  code (voir plus bas).
 
 ## Agents chapeautés
 
 | Agent | Ce que l'agent chef sait faire | État |
 |---|---|---|
-| agent-emploi | mémoire dans les deux sens, recherche, candidature, résumé, point du matin | complet (branche `connexion-agent-chef` d'agent-emploi) |
+| agent-emploi | mémoire dans les deux sens, recherche, candidature, résumé, point du matin | complet |
 | agent-perso | lui transmettre toute demande par sa zone de saisie unique (`/assistant`) : dépenses, tâches, mails, agenda, planning ; confirmation par « oui » / « non » avant toute écriture | sans modification d'agent-perso ; pas encore de mémoire partagée |
 | agent Instagram Mon guide | consulter les commentaires en attente (lecture seule : discussion « quels commentaires attendent ? » et carte du tableau de bord), lien vers son administration | lecture seule ; validation dans l'agent Instagram |
 
@@ -36,7 +44,8 @@ temps de la confirmation. Limite : 10 Mo ; les photos sont réduites avant l'env
 ## Agent développeur
 
 L'agent développeur a son propre dépôt, [agent-dev](https://github.com/AnthonyStocko/agent-dev) :
-il modifie le code d'agent-emploi, agent-perso, agent-manager, de l'agent Instagram et de Mon guide,
+il modifie le code d'agent-emploi, agent-perso, agent-manager, agent-devops-perso, de l'agent Instagram
+et de Mon guide,
 le teste dans GitHub Actions et le fusionne dans `main` si tout est vert, sans relecture. Ses
 garde-fous et sa mise en place sont décrits dans son README.
 
@@ -137,7 +146,7 @@ Tout est visible et modifiable dans l'onglet Mémoire.
    - `INSTAGRAM_URL` : facultatif (adresse de l'agent Instagram). Pour consulter ses commentaires en
      attente, ajoute aussi `INSTAGRAM_TOKEN` (jeton d'accès qu'il accepte en `Authorization: Bearer`) ;
      `INSTAGRAM_COMMENTS_PATH` (`api/comments/pending` par défaut) est la route qui les liste.
-3. **agent-emploi** : fusionne sa branche `connexion-agent-chef`, puis ajoute dans ses variables
+3. **agent-emploi** : ajoute dans ses variables
    Render `HUB_URL` (l'adresse de l'agent chef) et `HUB_TOKEN` (la même valeur qu'ici).
 4. **Point du matin** : dans ce dépôt GitHub, Settings > Secrets and variables > Actions, ajoute
    `AGENT_URL` (l'adresse de l'agent chef) et `CRON_SECRET`. Le workflow tourne du lundi au vendredi.
@@ -160,6 +169,7 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 
 ## Fichiers
 
+- `ARCHITECTURE.md` : vue d'ensemble de tous les agents
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
 - `memory.py` : mémoire et extraction des souvenirs — `agents.py` : connexion aux agents
 - `dev.py` : commande de l'agent développeur (dépôt agent-dev)
