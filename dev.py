@@ -25,6 +25,7 @@ WORKFLOW = "developpeur.yml"
 DEPOTS_DEFAUT = {
     "agent-emploi": "Agent emploi", "agent-perso": "Agent perso", "agent-manager": "Agent chef",
     "mon-guide-agent-instagram": "Agent Instagram Mon guide", "Monguide": "Mon guide (application)",
+    "agent-devops-perso": "Agent devops",
 }
 _depots_cache = {"at": 0.0, "value": None}
 STATUTS = ("en_cours", "fusionne", "a_relire", "tests_rouges", "ci_rouge", "sans_modification", "refuse", "erreur")
@@ -133,11 +134,11 @@ def submit(depot, demande):
 
 
 def nom_module(cle):
-    """Nom du module Python d'un agent hébergé dans l'agent chef : la clé, tirets remplacés par des soulignés."""
+    """Nom du paquet Python d'un agent : sa clé, tirets remplacés par des soulignés."""
     return str(cle or "").replace("-", "_")
 
 
-def cle_agent_erreur(cle, hebergement="depot"):
+def cle_agent_erreur(cle):
     """Renvoie la raison pour laquelle une clé de nouvel agent est refusée, ou None si elle convient."""
     if not CLE_AGENT.fullmatch(cle or "") or len(cle) > 60:
         return "La clé doit avoir la forme agent-xxx (minuscules, chiffres et tirets)."
@@ -145,10 +146,6 @@ def cle_agent_erreur(cle, hebergement="depot"):
         return "agent-dev est réservé à l'agent développeur."
     if cle in depots():
         return f"Le dépôt {cle} existe déjà dans la liste : je ne touche jamais à un dépôt existant."
-    if hebergement == "chef" and os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                             nom_module(cle) + ".py")):
-        return (f"Le fichier {nom_module(cle)}.py existe déjà dans l'agent chef : "
-                "je ne remplace jamais un module existant.")
     return None
 
 
@@ -166,12 +163,26 @@ def _ajouter_depot(cle, nom):
     _depots_cache.update(at=0.0, value=None)
 
 
+# Créations en cours : {référence de la demande de développement: {cle, libelle, description}}. Quand le
+# développement du dépôt est fusionné, son compte rendu déclenche l'installation dans l'agent chef.
+CREATIONS = "dev_creations"
+
+
+def _creations():
+    try:
+        value = json.loads(db.kv_get(CREATIONS) or "{}")
+    except ValueError:
+        value = {}
+    return value if isinstance(value, dict) else {}
+
+
 def creer_agent(cle, libelle, description):
-    """Crée un nouvel agent en trois étapes : dépôt GitHub privé vide, entrée dans depots.json d'agent-dev,
-    demande de développement sur ce dépôt. S'arrête à la première erreur en disant ce qui a réussi.
-    Renvoie la référence de la demande."""
+    """Crée un nouvel agent dans son propre dépôt, en trois étapes : dépôt GitHub public vide, entrée dans
+    depots.json d'agent-dev, demande de développement sur ce dépôt. S'arrête à la première erreur en disant
+    ce qui a réussi. Renvoie la référence de la demande ; quand elle est fusionnée, `report` lance
+    l'installation de l'agent dans l'agent chef."""
     cle, libelle = str(cle or "").strip(), " ".join(str(libelle or "").split())[:80]
-    description = str(description or "").replace("\r", "").strip()[:3000]
+    description = str(description or "").replace("\r", "").strip()[:2400]
     raison = cle_agent_erreur(cle)
     if raison:
         raise DevError(raison)
@@ -179,7 +190,7 @@ def creer_agent(cle, libelle, description):
         raise DevError("Il manque le libellé ou la description de l'agent.")
     if not configured():
         raise DevError("Agent développeur non configuré : ajoute la variable DEV_GITHUB_TOKEN (voir README).")
-    etapes = ["créer le dépôt GitHub privé", "l'ajouter à la liste des dépôts (depots.json d'agent-dev)",
+    etapes = ["créer le dépôt GitHub public", "l'ajouter à la liste des dépôts (depots.json d'agent-dev)",
               "lancer le développement de l'agent"]
 
     def echec(n, e, *, existe=False):
@@ -190,8 +201,8 @@ def creer_agent(cle, libelle, description):
             + f"\n- ❌ étape {n + 1} ({etapes[n]}) : " + ("le dépôt existe déjà sur GitHub, je n'y touche pas. " if existe else "")
             + detail + "\n- les étapes suivantes n'ont pas été faites.")
 
-    try:
-        _github("POST", "/user/repos", {"name": cle, "private": True, "auto_init": False,
+    try:   # public : l'agent chef l'installe par une archive de GitHub, sans jeton
+        _github("POST", "/user/repos", {"name": cle, "private": False, "auto_init": False,
                                         "description": libelle}, racine=True)
     except DevError as e:
         raise echec(0, e, existe=e.code == 422 and "already exists" in str(e).lower())
@@ -199,39 +210,80 @@ def creer_agent(cle, libelle, description):
         _ajouter_depot(cle, libelle)
     except (DevError, ValueError, KeyError, TypeError) as e:
         raise echec(1, e)
-    demande = (f"Crée un nouvel agent « {libelle} ». Le dépôt {PROPRIETAIRE}/{cle} est vide : tu pars de zéro. "
-               "L'agent doit être en Python, sans dépendance inutile, avec un app.py qui répond sur /healthz, "
-               "des tests test_*.py et un README qui liste les variables d'environnement à définir.\n\n"
-               "Ce que l'agent doit faire :\n" + description)
+    mod = nom_module(cle)
+    demande = (
+        f"Crée un nouvel agent « {libelle} ». Le dépôt {PROPRIETAIRE}/{cle} est vide : tu pars de zéro. Il sera "
+        "installé comme dépendance dans l'agent chef (agent-manager), qui l'appellera dans son propre processus, "
+        "sur le modèle du dépôt agent-devops-perso.\n"
+        f"1. Un paquet Python {mod}/ à la racine et un pyproject.toml (setuptools, nom « {cle} », paquets "
+        "listés) ; bibliothèque standard autant que possible, sinon dépendances déclarées dans pyproject.toml ; "
+        "imports absolus ; pas de serveur.\n"
+        f"2. Dans {mod}/__init__.py, les fonctions que l'agent chef appellera et une exception dédiée, décrites "
+        "avec un exemple dans la docstring du module. Chaque fonction renvoie un texte prêt à afficher, ou un "
+        "dictionnaire avec une clé « resume ». Une action qui écrit quelque part se fait en deux fonctions : "
+        "préparer (sans effet, pour demander confirmation) puis exécuter.\n"
+        "3. Des tests test_*.py à la racine, services externes simulés.\n"
+        "4. Un README en fiche de cadrage : mission en une phrase, ce qu'il fait, ce qu'il ne fait jamais, qui "
+        "l'appelle, interface, variables d'environnement (lues dans le processus de l'agent chef). Un CLAUDE.md "
+        "avec ses règles non négociables.\n"
+        "5. Aucun secret dans le dépôt : il est public.\n\n"
+        "Ce que l'agent doit faire :\n" + description)
     try:
-        return submit(cle, demande)
+        ref = submit(cle, demande)
     except DevError as e:
         raise echec(2, e)
+    db.kv_set(CREATIONS, json.dumps({**_creations(), ref: {"cle": cle, "libelle": libelle,
+                                                         "description": description}}, ensure_ascii=False))
+    return ref
 
 
-def creer_module(cle, libelle, description):
-    """Crée un nouvel agent comme module de l'agent chef : aucun dépôt, depots.json inchangé ; une seule
-    demande de développement sur agent-manager. Renvoie la référence de la demande."""
-    cle, libelle = str(cle or "").strip(), " ".join(str(libelle or "").split())[:80]
-    description = str(description or "").replace("\r", "").strip()[:3000]
-    raison = cle_agent_erreur(cle, "chef")
-    if raison:
-        raise DevError(raison)
-    if not libelle or len(description) < 10:
-        raise DevError("Il manque le libellé ou la description de l'agent.")
-    if not configured():
-        raise DevError("Agent développeur non configuré : ajoute la variable DEV_GITHUB_TOKEN (voir README).")
-    mod = nom_module(cle)
-    demande = (f"Crée un nouvel agent « {libelle} » comme module de l'agent chef :\n"
-               f"1. un fichier {mod}.py à la racine, avec la bibliothèque standard autant que possible ;\n"
-               f"2. une nouvelle action dans le routeur de chef.py, avec une description claire de quand "
-               f"l'utiliser, et la réponse affichée dans la discussion ;\n"
-               f"3. des tests test_{mod}.py avec les services externes simulés ;\n"
-               "4. une section dans le README et, s'il faut des variables d'environnement, leur déclaration "
-               "dans render.yaml ;\n"
-               "5. sans modifier le comportement des agents et actions existants.\n\n"
-               "Ce que l'agent doit faire :\n" + description)
+def _installer_dans_le_chef(creation):
+    """Deuxième étape d'une création : demande de développement sur agent-manager, qui installe le dépôt du
+    nouvel agent comme dépendance, à son dernier commit, et le branche dans la discussion. Renvoie la référence."""
+    cle, libelle, mod = creation["cle"], creation["libelle"], nom_module(creation["cle"])
+    sha = str(_github("GET", f"/repos/{PROPRIETAIRE}/{cle}/commits/main", racine=True).get("sha") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise DevError(f"Dernier commit de {cle} introuvable sur GitHub.")
+    demande = (
+        f"Installe l'agent « {libelle} » (dépôt public {PROPRIETAIRE}/{cle}) dans l'agent chef, comme "
+        "agent-devops-perso :\n"
+        f"1. requirements.txt : ajoute, avec un commentaire, la ligne « {cle} @ "
+        f"https://github.com/{PROPRIETAIRE}/{cle}/archive/{sha}.zip », puis lance pip install -r requirements.txt.\n"
+        f"2. Lis la docstring et le code du paquet installé {mod} pour connaître son interface. N'en copie pas "
+        "le code ici.\n"
+        f"3. chef.py : importe {mod} et ajoute au routeur une action (ou plusieurs) qui l'appelle, avec une "
+        "description claire de quand l'utiliser ; la réponse s'affiche dans la discussion. Une action qui écrit "
+        "quelque part attend un « oui », sur le modèle de devops_variable.\n"
+        f"4. Des tests test_{mod}.py, services externes simulés.\n"
+        "5. README : une section pour cet agent. ARCHITECTURE.md : une ligne dans « Les agents » et une dans "
+        "« Qui a le droit d'écrire où ». render.yaml : ses variables d'environnement, s'il en a.\n"
+        "6. Sans modifier le comportement des agents et actions existants.\n\n"
+        "Ce que l'agent fait :\n" + creation["description"][:1500])
     return submit("agent-manager", demande)
+
+
+def _suite_creation(ref, statut):
+    """Appelée à l'arrivée d'un compte rendu : si la demande était la création d'un agent, lance son
+    installation dans l'agent chef (ou dit pourquoi elle ne l'est pas). Renvoie le texte à afficher, ou None."""
+    creations = _creations()
+    creation = creations.pop(ref, None)
+    if not creation:
+        return None
+    db.kv_set(CREATIONS, json.dumps(creations, ensure_ascii=False))
+    cle, libelle = creation["cle"], creation["libelle"]
+    relance = (f"Pour la lancer plus tard, demande-moi : « dans l'agent chef, installe l'agent {cle} comme "
+               "dépendance, à son dernier commit, et branche-le dans la discussion ».")
+    if statut != "fusionne":
+        return (f"**Création de « {libelle} »** : le développement de son dépôt n'est pas fusionné, donc son "
+                f"installation dans l'agent chef n'est pas lancée. {relance}")
+    try:
+        suite = _installer_dans_le_chef(creation)
+    except (DevError, KeyError, TypeError) as e:
+        return (f"**Création de « {libelle} »** : son dépôt est prêt, mais son installation dans l'agent chef "
+                f"n'a pas pu être lancée ({str(e).replace(_token(), '***')}). {relance}")
+    return (f"**Création de « {libelle} » — étape 2 sur 2** : son dépôt est prêt, je lance son installation dans "
+            f"l'agent chef (référence {suite}). Le compte rendu arrivera ici ; l'agent sera utilisable dans cette "
+            "discussion après le déploiement de l'agent chef.")
 
 
 def report(body):
@@ -264,6 +316,10 @@ def report(body):
             + (f"\n\nPull request : {pr_url}" if pr_url else "") + (f"\nJournal : {run_url}" if run_url else ""))
     db.run("INSERT INTO messages(role, content, agent, created_at) VALUES(?,?,?,?)",
            ("assistant", text, "dev", db.now()))
+    suite = _suite_creation(ref, statut)
+    if suite:
+        db.run("INSERT INTO messages(role, content, agent, created_at) VALUES(?,?,?,?)",
+               ("assistant", suite, "dev", db.now()))
     return {"ok": True}
 
 

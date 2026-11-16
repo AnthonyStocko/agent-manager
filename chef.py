@@ -229,7 +229,7 @@ CONVERSATION RÉCENTE :
 NOUVEAU MESSAGE : {message}
 
 Choisis UNE action et réponds en JSON :
-{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "cle_depot": "", "libelle": "", "description_agent": "", "hebergement": "", "agent_devops": "", "nom_variable": "", "valeur_variable": "", "reponse": "", "a_retenir": []}}
+{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "cle_depot": "", "libelle": "", "description_agent": "", "agent_devops": "", "nom_variable": "", "valeur_variable": "", "reponse": "", "a_retenir": []}}
 
 Actions :
 - "repondre" : tu réponds toi-même dans "reponse" (conseil, question sur elle, sur ses offres déjà
@@ -262,10 +262,8 @@ Actions :
 - "creer_agent" : elle demande de CRÉER un nouvel agent (« crée un agent qui fait X »). Mets dans
   "cle_depot" la clé du futur agent (forme agent-xxx : minuscules, chiffres et tirets, jamais agent-dev),
   dans "libelle" un nom court, et dans "description_agent" la description complète de ce que l'agent doit
-  faire (le développeur ne voit pas cette conversation). Mets dans "hebergement" « chef » (par défaut :
-  l'agent devient un module de l'agent chef, sans dépôt) ou « depot » seulement si elle demande
-  explicitement un agent dans son propre dépôt. Si le rôle de l'agent n'est pas clair, utilise
-  "repondre" pour poser la question.
+  faire (le développeur ne voit pas cette conversation). L'agent aura son propre dépôt et sera installé
+  dans l'agent chef. Si le rôle de l'agent n'est pas clair, utilise "repondre" pour poser la question.
 - "devops_deploiements" : elle veut savoir si un correctif ou la dernière version d'un agent est bien
   déployé, en ligne, à jour sur Render. Mets dans "agent_devops" la clé de l'agent visé ("manager" pour
   l'agent chef, "emploi", "perso"), ou une chaîne vide pour les vérifier tous. Lecture seule.
@@ -311,21 +309,14 @@ def _creer_confirm(state, confirmed):
     _set_pending("dev_creer", None)
     if not confirmed:
         return "Création annulée, rien n'a été fait."
-    chef_heberge = state.get("hebergement") == "chef"
     try:
-        if chef_heberge:
-            ref = dev.creer_module(state["cle"], state["libelle"], state["description"])
-        else:
-            ref = dev.creer_agent(state["cle"], state["libelle"], state["description"])
+        ref = dev.creer_agent(state["cle"], state["libelle"], state["description"])
     except dev.DevError as e:
         return str(e)
-    if chef_heberge:
-        return (f"**Agent créé** comme module de l'agent chef (aucun dépôt créé) : développement lancé "
-                f"(référence {ref}). L'agent développeur travaille dans GitHub Actions, en général 5 à 20 "
-                "minutes : son compte rendu arrivera dans cette discussion à la fin du travail.")
-    return (f"**Agent créé** : dépôt privé AnthonyStocko/{state['cle']} créé, ajouté à la liste des dépôts, et "
-            f"développement lancé (référence {ref}). L'agent développeur travaille dans GitHub Actions, en général "
-            "5 à 20 minutes : son compte rendu arrivera dans cette discussion à la fin du travail.")
+    return (f"**Création lancée — étape 1 sur 2** : dépôt public {dev.PROPRIETAIRE}/{state['cle']} créé, ajouté "
+            f"à la liste des dépôts, et développement lancé (référence {ref}). L'agent développeur travaille dans "
+            "GitHub Actions, en général 5 à 20 minutes. Quand son travail sera fusionné, je lancerai l'étape 2 : "
+            "l'installation de l'agent dans l'agent chef. Les comptes rendus arriveront dans cette discussion.")
 
 
 def _direct(message, shown, answer, agent):
@@ -494,28 +485,22 @@ def chat(message, file=None):
             cle = str(plan.get("cle_depot") or "").strip()
             libelle = " ".join(str(plan.get("libelle") or "").split())[:80]
             description = str(plan.get("description_agent") or "").strip()[:3000]
-            heberge = "depot" if str(plan.get("hebergement") or "").strip().lower() == "depot" else "chef"
             if not dev.configured():
                 answer = "L'agent développeur n'est pas configuré : ajoute la variable DEV_GITHUB_TOKEN (voir README)."
             elif not libelle or len(description) < 10:
                 answer = "Que doit faire ce nouvel agent ? Décris son rôle en quelques phrases."
-            elif dev.cle_agent_erreur(cle, heberge):
-                answer = f"Je ne peux pas créer l'agent « {libelle} » : {dev.cle_agent_erreur(cle, heberge)}"
-            elif heberge == "chef":
-                _set_pending("dev_creer", {"cle": cle, "libelle": libelle, "description": description,
-                                           "hebergement": "chef"})
-                answer = (f"**Création d'un nouvel agent** — à confirmer :\n- Hébergement : module de l'agent chef\n"
-                          f"- Libellé : {libelle}\n- Description : {description}\n\n"
-                          "Je ne crée aucun dépôt : je lance une seule demande de développement sur agent-manager "
-                          "pour ajouter l'agent comme module. Réponds **oui** pour lancer, **non** pour annuler.")
+            elif dev.cle_agent_erreur(cle):
+                answer = f"Je ne peux pas créer l'agent « {libelle} » : {dev.cle_agent_erreur(cle)}"
             else:
-                _set_pending("dev_creer", {"cle": cle, "libelle": libelle, "description": description,
-                                           "hebergement": "depot"})
+                _set_pending("dev_creer", {"cle": cle, "libelle": libelle, "description": description})
                 answer = (f"**Création d'un nouvel agent** — à confirmer :\n"
-                          f"- Hébergement : dépôt privé {dev.PROPRIETAIRE}/{cle} "
-                          f"(privé, vide)\n- Libellé : {libelle}\n- Description : {description}\n\n"
-                          "Je crée le dépôt, je l'ajoute à la liste de l'agent développeur, puis je lance son "
-                          "développement. Réponds **oui** pour lancer, **non** pour annuler.")
+                          f"- Dépôt : {dev.PROPRIETAIRE}/{cle}, **public** (son code sera visible de tous ; "
+                          f"aucun secret n'y est écrit)\n- Libellé : {libelle}\n- Description : {description}\n\n"
+                          "Étape 1 : je crée le dépôt, je l'ajoute à la liste de l'agent développeur et je lance "
+                          "son développement. Étape 2, dès que ce travail est fusionné : une seconde demande "
+                          "installe l'agent dans l'agent chef, qui l'exécutera dans son propre processus. Les deux "
+                          "sont fusionnées et déployées sans relecture si les vérifications passent. "
+                          "Réponds **oui** pour lancer, **non** pour annuler.")
         elif action == "perso":
             agent_used = "perso"
             text = str(plan.get("demande_perso") or message)

@@ -62,31 +62,36 @@ L'agent chef le commande :
 ### Créer un nouvel agent
 
 « Crée un agent qui surveille tels sites et m'envoie un résumé » : si le rôle n'est pas clair, l'agent
-chef pose la question. Sinon il affiche un récapitulatif (hébergement, libellé, description) et attend
-**oui** ou **non**. Le routeur renvoie un champ `hebergement` : `chef` par défaut, `depot` seulement si
-tu demandes explicitement un agent dans son propre dépôt.
+chef pose la question. Sinon il affiche un récapitulatif (dépôt, libellé, description) et attend **oui**
+ou **non**.
 
-**Par défaut (`chef`) : l'agent est un module de l'agent chef.** Récapitulatif : « module de l'agent
-chef ». Aucun dépôt n'est créé, `depots.json` n'est pas modifié. Après « oui », une seule demande de
-développement part sur agent-manager (`dev.submit`) : l'agent développeur crée un fichier `<nom_du_module>.py` à la racine (clé avec tirets remplacés par des soulignés,
-bibliothèque standard autant que possible), une nouvelle action dans le routeur de `chef.py` (réponse
-affichée dans la discussion), des tests `test_<nom_du_module>.py` avec services externes simulés, une
-section du README et, si besoin, les variables d'environnement dans `render.yaml`, sans toucher aux
-agents et actions existants. La clé est refusée si `<nom_du_module>.py` existe déjà à la racine.
+**Règle : un agent, un dépôt.** Le nouvel agent a son propre dépôt, et l'agent chef l'installe comme
+dépendance pour l'exécuter dans son propre processus, comme l'agent devops (la limite de services Render
+est atteinte). Il n'y a plus d'agent créé comme simple module de l'agent chef.
 
-**Avec `depot` : agent dans son propre dépôt** (récapitulatif « dépôt privé AnthonyStocko/<clé> »).
-Après « oui », trois étapes dans cet ordre :
+Après « oui », la création se fait en deux temps :
 
-1. création du dépôt GitHub privé et vide (`POST /user/repos`, avec `DEV_GITHUB_TOKEN`) ;
-2. ajout de l'agent au fichier `depots.json` d'agent-dev (branche `main`) ;
-3. demande de développement sur ce dépôt : Python sans dépendance inutile, `app.py` qui répond sur
-   `/healthz`, tests `test_*.py`, README listant les variables d'environnement.
+1. **Le dépôt de l'agent.** Trois étapes dans cet ordre : création du dépôt GitHub **public** et vide
+   (`POST /user/repos`, avec `DEV_GITHUB_TOKEN`), ajout de l'agent au fichier `depots.json` d'agent-dev
+   (branche `main`), puis demande de développement sur ce dépôt : un paquet Python installable
+   (`pyproject.toml`), son interface décrite dans `__init__.py`, des tests, un README en fiche de cadrage
+   et un `CLAUDE.md`.
+2. **L'installation dans l'agent chef.** Dès que le compte rendu de l'étape 1 annonce une fusion, l'agent
+   chef lance de lui-même une seconde demande de développement, sur agent-manager : ligne dans
+   `requirements.txt` au dernier commit du nouveau dépôt, action dans le routeur de `chef.py`, tests,
+   README, `ARCHITECTURE.md`, variables dans `render.yaml`.
 
-Le compte rendu arrive dans la discussion à la fin du travail. Garde-fous : clé refusée si elle n'a pas
-la forme `agent-xxx` (minuscules, chiffres, tirets), si elle existe déjà dans la liste ou si elle vaut
-`agent-dev` ; si le dépôt existe déjà sur GitHub (message explicite, lu dans le tableau `errors` de la réponse de GitHub) ou si une étape échoue, tout s'arrête et le message
-dit quelles étapes ont réussi et laquelle a échoué (jamais le jeton). Aucun dépôt existant n'est
-modifié ni supprimé. Le jeton `DEV_GITHUB_TOKEN` doit avoir le droit de créer des dépôts (jeton
+Chaque étape annonce son compte rendu dans la discussion. Si l'étape 1 n'est pas fusionnée (tests en
+échec, par exemple), l'étape 2 n'est pas lancée et l'agent chef dit comment la demander plus tard.
+
+Le dépôt est public parce que l'agent chef l'installe par une archive de GitHub, sans jeton : son code est
+visible de tous, et aucun secret ne doit s'y trouver.
+
+Garde-fous : clé refusée si elle n'a pas la forme `agent-xxx` (minuscules, chiffres, tirets), si elle
+existe déjà dans la liste ou si elle vaut `agent-dev` ; si le dépôt existe déjà sur GitHub (message
+explicite, lu dans le tableau `errors` de la réponse de GitHub) ou si une étape échoue, tout s'arrête et
+le message dit quelles étapes ont réussi et laquelle a échoué (jamais le jeton). Aucun dépôt existant
+n'est modifié ni supprimé. Le jeton `DEV_GITHUB_TOKEN` doit avoir le droit de créer des dépôts (jeton
 classique : portée `repo` ; jeton à granularité fine : « Administration » en écriture sur le compte).
 
 Configuration côté agent chef : la variable Render `DEV_GITHUB_TOKEN` (le jeton GitHub créé pour
