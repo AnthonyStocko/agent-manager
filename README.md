@@ -110,8 +110,20 @@ perso, le commit en ligne sur Render est comparé au dernier commit de `main` su
 | ❌ échec | le dernier déploiement a échoué (le commit resté en ligne est indiqué) |
 | ⏳ en cours | un déploiement est en cours |
 
-Lecture seule : rien n'est modifié sur Render ni sur GitHub. L'agent développeur (GitHub Actions) et
-l'agent Instagram (Supabase) ne sont pas sur Render et ne sont pas suivis.
+La vérification est en lecture seule : rien n'est modifié sur Render ni sur GitHub. L'agent développeur
+(GitHub Actions) et l'agent Instagram (Supabase) ne sont pas sur Render et ne sont pas suivis.
+
+### Régler une variable d'environnement
+
+« Ajoute la variable JOB_ALERT_SENDERS à l'agent perso avec linkedin.com, indeed.com » : l'agent chef
+affiche l'agent, le nom et la valeur, et attend **oui** ou **non**. Après « oui », l'agent devops
+enregistre la variable sur Render (création, ou remplacement de la valeur) et s'assure qu'un déploiement
+l'applique ; l'agent visé est indisponible ou lent quelques minutes.
+
+Garde-fous : seuls l'agent chef, l'agent emploi et l'agent perso sont concernés ; un nom qui ressemble à
+un secret (mot de passe, jeton, clé) ou une variable réservée est refusé, les secrets se règlent à la
+main dans Render ; aucune variable n'est supprimée ; les valeurs en place ne sont jamais lues ni affichées.
+La valeur demandée, elle, reste visible dans la discussion.
 
 Variables Render de l'agent chef : `RENDER_API_KEY` (Account Settings > API Keys ; elle donne accès à
 tout le compte Render, garde-la uniquement ici), `RENDER_SERVICE_AGENT_EMPLOI` et

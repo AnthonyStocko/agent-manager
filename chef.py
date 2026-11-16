@@ -229,7 +229,7 @@ CONVERSATION RÉCENTE :
 NOUVEAU MESSAGE : {message}
 
 Choisis UNE action et réponds en JSON :
-{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "cle_depot": "", "libelle": "", "description_agent": "", "hebergement": "", "agent_devops": "", "reponse": "", "a_retenir": []}}
+{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "cle_depot": "", "libelle": "", "description_agent": "", "hebergement": "", "agent_devops": "", "nom_variable": "", "valeur_variable": "", "reponse": "", "a_retenir": []}}
 
 Actions :
 - "repondre" : tu réponds toi-même dans "reponse" (conseil, question sur elle, sur ses offres déjà
@@ -269,6 +269,11 @@ Actions :
 - "devops_deploiements" : elle veut savoir si un correctif ou la dernière version d'un agent est bien
   déployé, en ligne, à jour sur Render. Mets dans "agent_devops" la clé de l'agent visé ("manager" pour
   l'agent chef, "emploi", "perso"), ou une chaîne vide pour les vérifier tous. Lecture seule.
+- "devops_variable" : elle demande d'ajouter, de régler ou de changer une variable d'environnement d'un
+  agent sur Render. Mets la clé de l'agent dans "agent_devops" ("manager", "emploi" ou "perso"), le nom
+  exact de la variable dans "nom_variable" et la valeur, telle qu'elle l'a donnée, dans "valeur_variable".
+  N'invente ni le nom ni la valeur : s'il en manque un, ou si l'agent n'est pas clair, utilise "repondre"
+  pour le demander. Rien n'est modifié avant sa confirmation.
 Avec une pièce jointe et une demande de mail, choisis "perso" : le document sera joint au brouillon au
 moment de la confirmation. Tu ne vois pas le contenu de la pièce jointe : ne le devine pas, et si son
 usage n'est pas clair, demande-le avec "repondre" (elle reste disponible quelques minutes).
@@ -290,6 +295,16 @@ def _dev_confirm(state, confirmed):
     return (f"**Demande lancée** (référence {ref}). L'agent développeur travaille dans GitHub Actions, en "
             "général 5 à 20 minutes. Son compte rendu arrivera dans cette discussion ; l'avancement est "
             "dans l'onglet Développeur.")
+
+
+def _variable_confirm(state, confirmed):
+    _set_pending("devops_variable", None)
+    if not confirmed:
+        return "Réglage annulé, rien n'a été modifié."
+    try:
+        return devops.definir_variable(state["agent"], state["nom"], state["valeur"])["resume"]
+    except devops.ErreurDevops as e:
+        return str(e)
 
 
 def _creer_confirm(state, confirmed):
@@ -327,8 +342,10 @@ def chat(message, file=None):
     shown = (message + f"\n[pièce jointe : {file['name']}]").strip() if file else message
     # Réponse à une demande de confirmation de l'agent perso : traitée sans passer par le modèle
     expense, confirm, devel = _pending("perso_expense"), _pending("perso_confirm"), _pending("dev_confirm")
-    creer = _pending("dev_creer")
+    creer, variable = _pending("dev_creer"), _pending("devops_variable")
     if not file and (YES.match(message) or NO.match(message)):
+        if variable:
+            return _direct(message, shown, _variable_confirm(variable, bool(YES.match(message))), "devops")
         if creer:
             return _direct(message, shown, _creer_confirm(creer, bool(YES.match(message))), "dev")
         if devel:
@@ -345,6 +362,8 @@ def chat(message, file=None):
         _set_pending("dev_confirm", None)
     if creer:
         _set_pending("dev_creer", None)
+    if variable:
+        _set_pending("devops_variable", None)
     if file:
         _hold(file)
         if not message:
@@ -446,6 +465,17 @@ def chat(message, file=None):
                 answer = devops.texte(devops.verifier_deploiements(plan.get("agent_devops")))
             except devops.ErreurDevops as e:
                 answer = str(e)
+        elif action == "devops_variable":
+            agent_used = "devops"
+            try:   # vérifie la demande sans rien modifier ; l'écriture attend la confirmation
+                d = devops.preparer_variable(plan.get("agent_devops"), plan.get("nom_variable"),
+                                             plan.get("valeur_variable"))
+            except devops.ErreurDevops as e:
+                answer = str(e)
+            else:
+                _set_pending("devops_variable", {"agent": d["agent"], "nom": d["nom"], "valeur": d["valeur"]})
+                answer = (f"**Réglage d'une variable sur Render** — à confirmer :\n{d['resume']}\n\n"
+                          "Réponds **oui** pour l'enregistrer, **non** pour annuler. Rien n'est modifié avant.")
         elif action == "dev":
             agent_used = "dev"
             depot, demande = str(plan.get("depot") or "").strip(), str(plan.get("demande_dev") or "").strip()

@@ -15,6 +15,7 @@ os.environ.pop("DATABASE_URL", None)
 
 import agent_devops  # noqa: E402
 from agent_devops import clients  # noqa: E402
+from agent_devops.taches import variables  # noqa: E402
 
 import app  # noqa: E402
 import chef  # noqa: E402
@@ -49,9 +50,22 @@ class DevopsTest(unittest.TestCase):
         env = {"RENDER_API_KEY": "rnd_secret", "RENDER_SERVICE_ID": "srv-chef", "RENDER_SERVICE_AGENT_MANAGER": "",
                "RENDER_SERVICE_AGENT_EMPLOI": "srv-emploi", "RENDER_SERVICE_AGENT_PERSO": "srv-perso",
                "GITHUB_TOKEN": "", "DEV_GITHUB_TOKEN": "ghp_dev"}
-        for p in (mock.patch.object(clients, "_get", faux_get), mock.patch.dict(os.environ, env)):
+        self.ecritures = []
+
+        def faux_ecrire(methode, url, token, corps, timeout=30):
+            self.ecritures.append((methode, url.split("/v1/")[1], corps))
+            return {}
+
+        for p in (mock.patch.object(clients, "_get", faux_get), mock.patch.object(clients, "_ecrire", faux_ecrire),
+                  mock.patch.object(variables.time, "sleep", lambda s: None), mock.patch.dict(os.environ, env)):
             p.start()
             self.addCleanup(p.stop)
+
+    def demander_variable(self, nom="JOB_ALERT_SENDERS", valeur="linkedin.com, indeed.com", agent="perso"):
+        plan = {"action": "devops_variable", "agent_devops": agent, "nom_variable": nom, "valeur_variable": valeur,
+                "reponse": "", "a_retenir": []}
+        with mock.patch.object(chef.llm, "ask_json", return_value=plan):
+            return chef.chat(f"Ajoute la variable {nom} à l'agent {agent} avec {valeur}")["answer"]
 
     def test_agents_suivis_et_jetons(self):
         # l'agent chef est reconnu par RENDER_SERVICE_ID ; GitHub est lu avec le jeton de l'agent développeur
@@ -82,6 +96,45 @@ class DevopsTest(unittest.TestCase):
         self.assertIn("aaaaaaa", reponse["answer"])
         self.assertIn("bbbbbbb", reponse["answer"])
         self.assertNotIn("rnd_secret", reponse["answer"])
+
+    def test_variable_confirmee(self):
+        db.init()
+        reponse = self.demander_variable()
+        for mot in ("à confirmer", "Agent perso", "JOB_ALERT_SENDERS", "linkedin.com, indeed.com", "redéployé", "oui"):
+            self.assertIn(mot, reponse)
+        self.assertEqual(self.ecritures, [])            # rien n'est écrit avant la confirmation
+        reponse = chef.chat("oui")["answer"]            # la confirmation ne passe pas par le modèle
+        self.assertIn("✅", reponse)
+        self.assertEqual(self.ecritures, [
+            ("PUT", "services/srv-perso/env-vars/JOB_ALERT_SENDERS", {"value": "linkedin.com, indeed.com"}),
+            ("POST", "services/srv-perso/deploys", {"clearCache": "do_not_clear"})])
+        self.assertEqual(chef.history()[-1]["agent"], "devops")
+        self.assertNotIn("rnd_secret", reponse)
+        with mock.patch.object(chef.llm, "ask_json", return_value={"action": "repondre", "reponse": "Oui ?",
+                                                                    "a_retenir": []}):
+            chef.chat("oui")                            # plus rien en attente : ce « oui » n'écrit rien
+        self.assertEqual(len(self.ecritures), 2)
+
+    def test_variable_annulee_ou_abandonnee(self):
+        db.init()
+        self.demander_variable()
+        self.assertIn("rien n'a été modifié", chef.chat("non")["answer"])
+        self.demander_variable()
+        with mock.patch.object(chef.llm, "ask_json", return_value={"action": "repondre", "reponse": "Bonjour.",
+                                                                    "a_retenir": []}):
+            chef.chat("Au fait, bonjour")               # autre sujet : la demande en attente est abandonnée
+            chef.chat("oui")
+        self.assertEqual(self.ecritures, [])
+
+    def test_variable_refusee(self):
+        db.init()
+        self.assertIn("secret", self.demander_variable(nom="APP_PASSWORD", valeur="azerty"))
+        self.assertIn("Agent inconnu", self.demander_variable(agent="instagram"))
+        self.assertIn("valeur", self.demander_variable(valeur=""))
+        with mock.patch.object(chef.llm, "ask_json", return_value={"action": "repondre", "reponse": "Oui ?",
+                                                                    "a_retenir": []}):
+            chef.chat("oui")                            # plus rien en attente : ce « oui » n'écrit rien
+        self.assertEqual(self.ecritures, [])
 
     def test_sans_cle_render(self):
         db.init()
