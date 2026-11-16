@@ -182,6 +182,7 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 ## Fichiers
 
 - `ARCHITECTURE.md` : vue d'ensemble de tous les agents
+- `CLAUDE.md` : règles non négociables, lues par l'agent développeur avant toute modification
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
 - `memory.py` : mémoire et extraction des souvenirs — `agents.py` : connexion aux agents
 - `dev.py` : commande de l'agent développeur (dépôt agent-dev)
