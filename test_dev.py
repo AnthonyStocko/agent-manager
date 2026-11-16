@@ -193,13 +193,16 @@ class CreerAgentTest(unittest.TestCase):
         for table in ("dev_requests", "messages", "kv"):
             db.run(f"DELETE FROM {table}")
         self.appels, self.pannes = [], {}
-        self.fichier = {"agent-emploi": {"depot": "AnthonyStocko/agent-emploi", "nom": "Agent emploi"}}
+        self.fichier = {"agent-emploi": {"depot": "AnthonyStocko/agent-emploi", "nom": "Agent emploi"},
+                        "agent-manager": {"depot": "AnthonyStocko/agent-manager", "nom": "Agent chef"}}
         dev._depots_cache.update(at=9e12, value=dev.DEPOTS_DEFAUT)
 
         def faux_github(methode, chemin, corps=None, racine=False):
             self.appels.append((methode, chemin, corps, racine))
             if (methode, chemin) in self.pannes:
                 raise self.pannes[(methode, chemin)]
+            if chemin.endswith("/commits/main"):
+                return {"sha": self.sha}
             if chemin.startswith("/contents/depots.json") and methode == "GET":
                 return {"sha": "abc", "content": base64.b64encode(json.dumps(self.fichier).encode()).decode()}
             if methode == "PUT":
@@ -212,7 +215,8 @@ class CreerAgentTest(unittest.TestCase):
             self.addCleanup(p.stop)
         self.plan = {"action": "creer_agent", "cle_depot": "agent-veille", "libelle": "Agent veille",
                      "description_agent": "Surveille des sites et envoie un résumé chaque matin.",
-                     "hebergement": "depot", "reponse": "", "a_retenir": []}
+                     "reponse": "", "a_retenir": []}
+        self.sha = "c" * 40
 
     def _demander(self):
         with mock.patch.object(chef.llm, "ask_json", return_value=self.plan):
@@ -220,14 +224,14 @@ class CreerAgentTest(unittest.TestCase):
 
     def test_creation_reussie(self):
         r = self._demander()
-        self.assertIn("AnthonyStocko/agent-veille", r["answer"])
-        self.assertIn("Agent veille", r["answer"])
+        for mot in ("AnthonyStocko/agent-veille", "**public**", "Agent veille", "Étape 2", "sans relecture"):
+            self.assertIn(mot, r["answer"])
         self.assertEqual(self.appels, [])   # rien avant le « oui »
         r = chef.chat("oui")
-        self.assertIn("Agent créé", r["answer"])
-        self.assertIn("compte rendu arrivera", r["answer"])
+        self.assertIn("étape 1 sur 2", r["answer"])
+        self.assertIn("dépôt public AnthonyStocko/agent-veille", r["answer"])
         creation, lecture, ecriture, _relecture, lancement = self.appels
-        self.assertEqual(creation, ("POST", "/user/repos", {"name": "agent-veille", "private": True,
+        self.assertEqual(creation, ("POST", "/user/repos", {"name": "agent-veille", "private": False,
                                     "auto_init": False, "description": "Agent veille"}, True))
         self.assertEqual(lecture[:2], ("GET", "/contents/depots.json?ref=main"))
         self.assertEqual(ecriture[:2], ("PUT", "/contents/depots.json"))
@@ -239,39 +243,62 @@ class CreerAgentTest(unittest.TestCase):
         self.assertEqual(lancement[1], "/actions/workflows/developpeur.yml/dispatches")
         entree = lancement[2]["inputs"]
         self.assertEqual(entree["depot"], "agent-veille")
-        for mot in ("vide", "/healthz", "test_*.py", "README", "Surveille des sites"):
+        for mot in ("vide", "agent_veille/", "pyproject.toml", "agent-devops-perso", "test_*.py", "README",
+                    "CLAUDE.md", "public", "Surveille des sites"):
             self.assertIn(mot, entree["demande"])
+        self.assertLessEqual(len(entree["demande"]), 4000)
 
-    def test_hebergement_par_defaut_dans_l_agent_chef(self):
-        del self.plan["hebergement"]   # absent : « chef » par défaut
-        r = self._demander()
-        self.assertIn("module de l'agent chef", r["answer"])
-        self.assertNotIn("dépôt privé", r["answer"])
-        self.assertEqual(self.appels, [])
-        r = chef.chat("oui")
-        self.assertIn("module de l'agent chef", r["answer"])
-        self.assertEqual(len(self.appels), 1)   # ni dépôt ni depots.json : une seule demande
-        self.assertEqual(self.appels[0][1], "/actions/workflows/developpeur.yml/dispatches")
-        entree = self.appels[0][2]["inputs"]
+    def _creer(self):
+        """Création confirmée ; renvoie la référence de la demande de développement du nouveau dépôt."""
+        self._demander()
+        chef.chat("oui")
+        self.appels.clear()
+        return db.run("SELECT ref FROM dev_requests")[0]["ref"]
+
+    def _lancements(self):
+        return [a[2]["inputs"] for a in self.appels if a[1].endswith("/dispatches")]
+
+    def test_installation_dans_l_agent_chef_quand_le_depot_est_fusionne(self):
+        ref = self._creer()
+        dev.report({"id": ref, "statut": "fusionne", "titre": "Agent veille", "resume": "Créé."})
+        self.assertIn(("GET", "/repos/AnthonyStocko/agent-veille/commits/main", None, True), self.appels)
+        (entree,) = self._lancements()
         self.assertEqual(entree["depot"], "agent-manager")
-        for mot in ("agent_veille.py", "test_agent_veille.py", "chef.py", "render.yaml",
-                    "README", "Surveille des sites"):
+        for mot in ("https://github.com/AnthonyStocko/agent-veille/archive/" + "c" * 40 + ".zip", "requirements.txt",
+                    "agent_veille", "chef.py", "test_agent_veille.py", "ARCHITECTURE.md", "render.yaml",
+                    "devops_variable", "Surveille des sites"):
             self.assertIn(mot, entree["demande"])
-        self.assertEqual(self.fichier, {"agent-emploi": {"depot": "AnthonyStocko/agent-emploi",
-                                                        "nom": "Agent emploi"}})
+        messages = [m["content"] for m in chef.history()]
+        self.assertIn("étape 2 sur 2", messages[-1])
+        self.assertIn("modification fusionnée", messages[-2])   # le compte rendu de l'étape 1 est affiché avant
+        suite = [r["ref"] for r in db.run("SELECT ref, depot FROM dev_requests") if r["depot"] == "agent-manager"][0]
+        self.assertIn(suite, messages[-1])
+        # Le compte rendu de l'installation, ou un second envoi du premier, ne relance rien
+        dev.report({"id": suite, "statut": "fusionne", "titre": "Installe l'agent veille"})
+        dev.report({"id": ref, "statut": "fusionne"})
+        self.assertEqual(len(self._lancements()), 1)
 
-    def test_hebergement_depot_explicite_affiche_le_depot(self):
-        self.assertIn("dépôt privé AnthonyStocko/agent-veille", self._demander()["answer"])
+    def test_pas_d_installation_si_le_developpement_n_est_pas_fusionne(self):
+        ref = self._creer()
+        dev.report({"id": ref, "statut": "tests_rouges", "titre": "Agent veille"})
+        self.assertEqual(self._lancements(), [])
+        dernier = chef.history()[-1]["content"]
+        self.assertIn("n'est pas lancée", dernier)
+        self.assertIn("installe l'agent agent-veille", dernier)
 
-    def test_module_deja_existant_refuse(self):
-        self.plan["hebergement"] = "chef"
-        self.plan["cle_depot"] = "agent-s"   # agent_s.py n'existe pas : accepté
-        self.assertIn("à confirmer", self._demander()["answer"])
-        with mock.patch.object(dev.os.path, "exists", return_value=True):
-            self.plan["cle_depot"] = "agent-veille"
-            r = self._demander()["answer"]
-        self.assertIn("agent_veille.py existe déjà", r)
-        self.assertEqual(self.appels, [])
+    def test_installation_impossible_est_expliquee(self):
+        ref = self._creer()
+        self.sha = ""   # dernier commit introuvable
+        dev.report({"id": ref, "statut": "fusionne"})
+        self.assertEqual(self._lancements(), [])
+        self.assertIn("n'a pas pu être lancée", chef.history()[-1]["content"])
+        self.assertNotIn("ghp_secret", chef.history()[-1]["content"])
+
+    def test_une_demande_ordinaire_ne_declenche_aucune_installation(self):
+        ref = dev.submit("agent-emploi", "Trie les offres par date de publication")
+        self.appels.clear()
+        dev.report({"id": ref, "statut": "fusionne"})
+        self.assertEqual(self._lancements(), [])
 
     def test_cle_invalide_ou_existante(self):
         for cle in ("veille", "Agent-Veille", "agent-", "agent-dev", "agent-emploi", "agent veille", "agent-a/../b"):
@@ -312,7 +339,7 @@ class CreerAgentTest(unittest.TestCase):
         self.assertIn("annulée", chef.chat("non")["answer"])
         self.assertEqual(self.appels, [])
         with mock.patch.object(chef.llm, "ask_json", return_value={"action": "repondre", "reponse": "ok"}):
-            self.assertNotIn("Agent créé", chef.chat("oui")["answer"])   # plus rien en attente
+            self.assertNotIn("Création lancée", chef.chat("oui")["answer"])   # plus rien en attente
         self.assertEqual(self.appels, [])
 
 

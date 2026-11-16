@@ -66,10 +66,9 @@ initiatives (point du matin). Le développement et le devops sont des agents à 
 
 **Règle pour tout nouvel agent : un dépôt à lui.** Tant que la limite de services Render est atteinte,
 l'agent chef l'installe comme dépendance et l'exécute dans son propre processus, comme l'agent devops.
-Il sera hébergé à part quand un NAS sera disponible.
-
-> Pas encore appliqué par le code : aujourd'hui, « crée un agent » en fait par défaut un module de
-> l'agent chef, sans dépôt (voir le README, « Créer un nouvel agent »).
+Il sera hébergé à part quand un NAS sera disponible. « Crée un agent », dans la discussion de l'agent
+chef, applique cette règle : création du dépôt (public), développement, puis installation dans l'agent
+chef (voir le README, « Créer un nouvel agent »).
 
 ### Deux routines du matin, chacune sur son domaine
 
