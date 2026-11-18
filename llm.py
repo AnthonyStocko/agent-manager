@@ -2,6 +2,7 @@
 
 Principal : API Google Gemini via le SDK officiel `google-genai` (modèle `gemini-2.5-flash` par défaut).
 Nécessite la variable d'environnement GEMINI_API_KEY (avec support de python-dotenv en local).
+Utilise l'API v1beta pour assurer la compatibilité avec le mode JSON.
 
 Secours (optionnel) : Claude Code en mode non interactif (`claude -p`) si GEMINI_API_KEY n'est pas
 définie et qu'une session ou le jeton CLAUDE_CODE_OAUTH_TOKEN est présent.
@@ -56,16 +57,18 @@ def get_gemini_client():
                        "Renseigne-la dans ton environnement ou dans un fichier .env.")
     try:
         from google import genai
+        from google.genai import types
     except ImportError:
         raise LLMError("SDK google-genai introuvable. Lance `pip install -r requirements.txt`.")
     if _gemini_client is None or _gemini_cached_key != api_key:
-        _gemini_client = genai.Client(api_key=api_key)
+        http_options = types.HttpOptions(api_version="v1beta")
+        _gemini_client = genai.Client(api_key=api_key, http_options=http_options)
         _gemini_cached_key = api_key
     return _gemini_client
 
 
 def ask_gemini(prompt, model=None, timeout=None, json_mode=False):
-    """Appel à l'API Gemini via le SDK officiel google-genai."""
+    """Appel à l'API Gemini (v1beta) via le SDK officiel google-genai."""
     client = get_gemini_client()
     target_model = model or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
     try:
@@ -73,9 +76,11 @@ def ask_gemini(prompt, model=None, timeout=None, json_mode=False):
         config_kwargs = {}
         if json_mode:
             config_kwargs["response_mime_type"] = "application/json"
+        http_kwargs = {"api_version": "v1beta"}
         if timeout:
-            config_kwargs["http_options"] = types.HttpOptions(timeout=float(timeout))
-        config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+            http_kwargs["timeout"] = float(timeout)
+        config_kwargs["http_options"] = types.HttpOptions(**http_kwargs)
+        config = types.GenerateContentConfig(**config_kwargs)
 
         response = client.models.generate_content(
             model=target_model,

@@ -26,6 +26,15 @@ class GeminiLLMTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "test-key-123"}):
             self.assertTrue(llm.is_gemini_configured())
 
+    def test_get_gemini_client_configures_v1beta(self):
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "test-key-123"}):
+            with mock.patch("google.genai.Client") as mock_client_cls:
+                llm.get_gemini_client()
+                mock_client_cls.assert_called_once()
+                call_kwargs = mock_client_cls.call_args.kwargs
+                self.assertEqual(call_kwargs["api_key"], "test-key-123")
+                self.assertEqual(call_kwargs["http_options"].api_version, "v1beta")
+
     def test_ask_gemini_success(self):
         mock_response = mock.MagicMock()
         mock_response.text = "Réponse Gemini"
@@ -40,6 +49,7 @@ class GeminiLLMTest(unittest.TestCase):
                 call_kwargs = mock_client.models.generate_content.call_args.kwargs
                 self.assertEqual(call_kwargs["model"], "gemini-2.5-flash")
                 self.assertEqual(call_kwargs["contents"], "Bonjour")
+                self.assertEqual(call_kwargs["config"].http_options.api_version, "v1beta")
 
     def test_ask_gemini_custom_model(self):
         mock_response = mock.MagicMock()
@@ -53,6 +63,7 @@ class GeminiLLMTest(unittest.TestCase):
                 self.assertEqual(res, "Réponse Gemini Pro")
                 call_kwargs = mock_client.models.generate_content.call_args.kwargs
                 self.assertEqual(call_kwargs["model"], "gemini-2.5-pro")
+                self.assertEqual(call_kwargs["config"].http_options.api_version, "v1beta")
 
     def test_ask_json_gemini_success(self):
         mock_response = mock.MagicMock()
@@ -66,6 +77,7 @@ class GeminiLLMTest(unittest.TestCase):
                 self.assertEqual(res, {"action": "repondre", "reponse": "Bonjour !"})
                 call_kwargs = mock_client.models.generate_content.call_args.kwargs
                 self.assertEqual(call_kwargs["config"].response_mime_type, "application/json")
+                self.assertEqual(call_kwargs["config"].http_options.api_version, "v1beta")
 
     def test_ask_json_custom_model(self):
         mock_response = mock.MagicMock()
@@ -79,6 +91,7 @@ class GeminiLLMTest(unittest.TestCase):
                 self.assertEqual(res, {"action": "repondre", "reponse": "Ok Pro"})
                 call_kwargs = mock_client.models.generate_content.call_args.kwargs
                 self.assertEqual(call_kwargs["model"], "gemini-2.5-pro")
+                self.assertEqual(call_kwargs["config"].http_options.api_version, "v1beta")
 
     def test_ask_json_strips_markdown_fences(self):
         mock_response = mock.MagicMock()
@@ -125,6 +138,7 @@ class GeminiLLMTest(unittest.TestCase):
                 mock_client.models.generate_content.assert_called_once()
                 call_kwargs = mock_client.models.generate_content.call_args.kwargs
                 self.assertEqual(call_kwargs["model"], "gemini-2.5-pro")
+                self.assertEqual(call_kwargs["config"].http_options.api_version, "v1beta")
 
     def test_api_messages_returns_available_models(self):
         with mock.patch("chef.history", return_value=[]), mock.patch("dev.sync"):
