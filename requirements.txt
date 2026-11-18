@@ -1,3 +1,5 @@
+google-genai
+python-dotenv
 psycopg[binary]
 pypdf
 # Agent devops : son dépôt, à un commit précis. Pour prendre une version plus récente, remplace le commit

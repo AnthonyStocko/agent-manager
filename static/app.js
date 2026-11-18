@@ -56,6 +56,15 @@ function addMessage(m) {
 async function loadChat() {
   const r = await api("/api/messages");
   $("#logout").hidden = !r.auth; $("#chat-log").innerHTML = "";
+  if (r.models && $("#chat-model")) {
+    const saved = localStorage.getItem("agent_chef_model") || r.default_model || "";
+    $("#chat-model").innerHTML = r.models.map((m) =>
+      `<option value="${esc(m.id)}"${m.id === saved ? " selected" : ""}>${esc(m.name)}</option>`
+    ).join("");
+    $("#chat-model").onchange = () => {
+      localStorage.setItem("agent_chef_model", $("#chat-model").value);
+    };
+  }
   if (!r.messages.length) addMessage({ role: "assistant", content: "Bonjour. Je coordonne tes agents et je retiens ce que j'apprends de toi. Que veux-tu faire ?" });
   r.messages.forEach(addMessage);
 }
@@ -109,7 +118,10 @@ $("#chat-form").onsubmit = async (e) => {
   const wait = addMessage({ role: "assistant", content: "Je m'en occupe… (une recherche d'offres peut prendre plusieurs minutes)" });
   const btn = $("#chat-send"); btn.disabled = true;
   try {
-    const r = await api("/api/chat", file ? { message: text, file } : { message: text });
+    const payload = file ? { message: text, file } : { message: text };
+    const selModel = $("#chat-model") ? $("#chat-model").value : undefined;
+    if (selModel) payload.model = selModel;
+    const r = await api("/api/chat", payload);
     wait.remove(); addMessage({ role: "assistant", content: r.answer, agent: r.agent });
     if (r.remembered) toast("Noté dans ma mémoire.");
   } catch (er) { wait.remove(); addMessage({ role: "assistant", content: "Erreur : " + er.message }); }

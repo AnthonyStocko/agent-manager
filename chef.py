@@ -342,7 +342,7 @@ def _direct(message, shown, answer, agent):
     return {"answer": answer, "agent": agent, "remembered": 0}
 
 
-def chat(message, file=None):
+def chat(message, file=None, model=None):
     message = str(message or "").strip()[:6000]
     file = files.decode(file)
     if not message and not file:
@@ -413,7 +413,7 @@ def chat(message, file=None):
         attachment=(f"{file['name']} ({'image' if files.is_image(file) else 'document'})" if file else "(aucune)"),
         history="\n".join(f"{'Elle' if m['role'] == 'user' else 'Toi'} : {m['content'][:700]}"
                           for m in past) or "(début de conversation)",
-        message=message))
+        message=message), model=model)
     if not isinstance(plan, dict):
         raise llm.LLMError("Réponse du modèle mal formée, réessaie.")
     action, agent_used = plan.get("action"), ""

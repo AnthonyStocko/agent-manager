@@ -1,12 +1,10 @@
-"""Appels au modèle via Claude Code en mode non interactif (`claude -p`).
+"""Appels aux modèles de langage (LLM) : Google Gemini et secours Claude Code.
 
-En local : la session Claude Code déjà connectée sur ta machine, donc ton abonnement.
-Sur un serveur (Render) : le jeton d'abonnement créé sur ton PC avec `claude setup-token`,
-placé dans la variable d'environnement CLAUDE_CODE_OAUTH_TOKEN.
+Principal : API Google Gemini via le SDK officiel `google-genai` (modèle `gemini-2.5-flash` par défaut).
+Nécessite la variable d'environnement GEMINI_API_KEY (avec support de python-dotenv en local).
 
-Claude Code est lancé sans aucun outil (ni fichiers, ni commandes, ni web), dans un dossier
-vide, et ne reçoit que les variables d'environnement de la liste ci-dessous : ni APP_PASSWORD
-ni ANTHROPIC_API_KEY (sinon il utiliserait l'API payante) ne lui sont visibles.
+Secours (optionnel) : Claude Code en mode non interactif (`claude -p`) si GEMINI_API_KEY n'est pas
+définie et qu'une session ou le jeton CLAUDE_CODE_OAUTH_TOKEN est présent.
 """
 import json
 import os
@@ -15,6 +13,20 @@ import shutil
 import subprocess
 import tempfile
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+AVAILABLE_MODELS = [
+    {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (rapide, recommandé)", "provider": "gemini"},
+    {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (raisonnement)", "provider": "gemini"},
+    {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "provider": "gemini"},
+    {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "provider": "gemini"},
+    {"id": "claude", "name": "Claude Code (CLI local)", "provider": "claude"},
+]
 
 CLI_TIMEOUT_SECONDS = int(os.getenv("CLI_TIMEOUT_SECONDS", "300"))
 CLI_ENV_ALLOWLIST = [
@@ -24,12 +36,60 @@ CLI_ENV_ALLOWLIST = [
     "CLAUDE_CODE_OAUTH_TOKEN",
 ]
 
+_gemini_client = None
+_gemini_cached_key = None
+
 
 class LLMError(Exception):
     pass
 
 
-def _command():
+def is_gemini_configured():
+    return bool((os.getenv("GEMINI_API_KEY") or "").strip())
+
+
+def get_gemini_client():
+    global _gemini_client, _gemini_cached_key
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        raise LLMError("Variable d'environnement GEMINI_API_KEY manquante. "
+                       "Renseigne-la dans ton environnement ou dans un fichier .env.")
+    try:
+        from google import genai
+    except ImportError:
+        raise LLMError("SDK google-genai introuvable. Lance `pip install -r requirements.txt`.")
+    if _gemini_client is None or _gemini_cached_key != api_key:
+        _gemini_client = genai.Client(api_key=api_key)
+        _gemini_cached_key = api_key
+    return _gemini_client
+
+
+def ask_gemini(prompt, model=None, timeout=None, json_mode=False):
+    """Appel à l'API Gemini via le SDK officiel google-genai."""
+    client = get_gemini_client()
+    target_model = model or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    try:
+        from google.genai import types
+        config_kwargs = {}
+        if json_mode:
+            config_kwargs["response_mime_type"] = "application/json"
+        if timeout:
+            config_kwargs["http_options"] = types.HttpOptions(timeout=float(timeout))
+        config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+
+        response = client.models.generate_content(
+            model=target_model,
+            contents=prompt,
+            config=config,
+        )
+    except Exception as e:
+        raise LLMError(f"Erreur API Gemini ({target_model}) : {e}")
+
+    text = response.text or ""
+    return text.strip()
+
+
+def _claude_command():
     exe = shutil.which("claude")
     if not exe:
         raise LLMError("Claude Code est introuvable. En local : installe-le et lance `claude` une "
@@ -47,10 +107,11 @@ def _command():
     return command
 
 
-def ask(prompt, timeout=None):
-    command = _command()
+def ask_claude(prompt, timeout=None):
+    """Appel de secours via Claude Code CLI (`claude -p`)."""
+    command = _claude_command()
     env = {k: os.environ[k] for k in CLI_ENV_ALLOWLIST if k in os.environ}
-    workdir = tempfile.mkdtemp(prefix="agent-chef-")  # dossier vide : rien à lire
+    workdir = tempfile.mkdtemp(prefix="agent-chef-")
     try:
         proc = subprocess.run(command, input=prompt, capture_output=True, text=True,
                               encoding="utf-8", errors="replace",
@@ -75,9 +136,27 @@ def ask(prompt, timeout=None):
     return str(data.get("result") or "").strip()
 
 
-def ask_json(prompt, timeout=None):
+def ask(prompt, model=None, timeout=None):
+    """Envoie un prompt au modèle (spécifié ou par défaut)."""
+    if model == "claude" or (not model and not is_gemini_configured() and (os.getenv("CLAUDE_CODE_OAUTH_TOKEN") or shutil.which("claude"))):
+        return ask_claude(prompt, timeout=timeout)
+    if is_gemini_configured() or model:
+        return ask_gemini(prompt, model=model, timeout=timeout, json_mode=False)
+    raise LLMError("Variable d'environnement GEMINI_API_KEY manquante. "
+                   "Renseigne-la dans ton environnement ou dans un fichier .env.")
+
+
+def ask_json(prompt, model=None, timeout=None):
     """Demande une réponse JSON et l'extrait même si elle est entourée de texte."""
-    text = ask(prompt + "\n\nRéponds uniquement avec du JSON valide, sans texte autour.", timeout)
+    if model == "claude" or (not model and not is_gemini_configured() and (os.getenv("CLAUDE_CODE_OAUTH_TOKEN") or shutil.which("claude"))):
+        text = ask_claude(prompt + "\n\nRéponds uniquement avec du JSON valide, sans texte autour.", timeout)
+    elif is_gemini_configured() or model:
+        text = ask_gemini(prompt + "\n\nRéponds uniquement avec du JSON valide, sans texte autour.",
+                          model=model, timeout=timeout, json_mode=True)
+    else:
+        raise LLMError("Variable d'environnement GEMINI_API_KEY manquante. "
+                       "Renseigne-la dans ton environnement ou dans un fichier .env.")
+
     text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
     try:
         return json.loads(text)

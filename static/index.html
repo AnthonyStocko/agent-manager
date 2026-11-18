@@ -33,7 +33,13 @@
       <button class="primary" id="chat-send">Envoyer</button>
     </form>
     <div id="chip" class="chip" hidden><span id="chip-name"></span> <button type="button" id="chip-remove" aria-label="Retirer la pièce jointe">×</button></div>
-    <div class="toolbar"><button id="chat-clear" type="button">Effacer la discussion</button></div>
+    <div class="toolbar">
+      <label class="model-picker" style="margin:0; display:inline-flex; align-items:center; gap:8px;">
+        <span>Modèle LLM :</span>
+        <select id="chat-model" style="width:auto;"></select>
+      </label>
+      <button id="chat-clear" type="button" style="margin-left:auto;">Effacer la discussion</button>
+    </div>
   </div>
 </section>
 

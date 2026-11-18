@@ -174,7 +174,7 @@ Tout est visible et modifiable dans l'onglet Mémoire.
    (`postgresql://…`).
 2. **Render** : New > Blueprint, choisis ce dépôt, puis renseigne :
    - `APP_PASSWORD` : mot de passe de l'agent chef (identifiant `admin`).
-   - `CLAUDE_CODE_OAUTH_TOKEN` : le même jeton d'abonnement que tes autres agents.
+   - `GEMINI_API_KEY` : ta clé API Google Gemini (modèle `gemini-2.5-flash`).
    - `DATABASE_URL` : l'URL de l'étape 1. Sans elle, la mémoire part dans un fichier local,
      effacé à chaque redéploiement.
    - `HUB_TOKEN` : une longue chaîne aléatoire de ton choix.
@@ -184,6 +184,7 @@ Tout est visible et modifiable dans l'onglet Mémoire.
    - `INSTAGRAM_URL` : facultatif (adresse de l'agent Instagram). Pour consulter ses commentaires en
      attente, ajoute aussi `INSTAGRAM_TOKEN` (jeton d'accès qu'il accepte en `Authorization: Bearer`) ;
      `INSTAGRAM_COMMENTS_PATH` (`api/comments/pending` par défaut) est la route qui les liste.
+   - `CLAUDE_CODE_OAUTH_TOKEN` : facultatif / secours, si tu souhaites conserver Claude Code en repli.
 3. **agent-emploi** : ajoute dans ses variables
    Render `HUB_URL` (l'adresse de l'agent chef) et `HUB_TOKEN` (la même valeur qu'ici).
 4. **Point du matin** : dans ce dépôt GitHub, Settings > Secrets and variables > Actions, ajoute
@@ -191,19 +192,28 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 
 ## En local
 
-    pip install -r requirements.txt   # Postgres, lecture des PDF et agent devops
-    python app.py                     # http://127.0.0.1:8770, base SQLite locale
+1. Installe les dépendances :
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Crée un fichier `.env` à la racine (ou configure tes variables d'environnement) avec au minimum :
+   ```env
+   GEMINI_API_KEY=ta_cle_api_gemini
+   ```
+3. Lance l'agent chef :
+   ```bash
+   python app.py   # http://127.0.0.1:8770, base SQLite locale
+   ```
 
 ## À savoir
 
-- Chaque message de discussion et chaque lot d'événements consomme un appel à Claude Code sur
-  ton abonnement.
+- Chaque message de discussion et chaque lot d'événements sollicite l'API Gemini (`gemini-2.5-flash`).
 - Sur l'offre gratuite de Render, un agent endormi met environ une minute à se réveiller : la
   première demande de la journée est lente.
 - `HUB_TOKEN` donne accès à la mémoire et à l'API d'agent-emploi : traite-le comme un mot de passe.
 - Autre variable de l'agent développeur : `DEV_REPO` (son dépôt, `AnthonyStocko/agent-dev` par défaut).
 - Autres variables : `PERSO_PROVIDER` (modèle demandé à agent-perso, `claude-pro` par défaut),
-  `CLAUDE_CLI_MODEL`, `CLI_TIMEOUT_SECONDS`.
+  `GEMINI_MODEL` (`gemini-2.5-flash` par défaut), `CLI_TIMEOUT_SECONDS`.
 
 ## Fichiers
 
@@ -213,4 +223,4 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 - `memory.py` : mémoire et extraction des souvenirs — `agents.py` : connexion aux agents
 - `dev.py` : commande de l'agent développeur (dépôt agent-dev)
 - vérification des déploiements Render : paquet `agent_devops`, installé depuis le dépôt agent-devops-perso
-- `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Claude Code — `static/` : interface
+- `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Google Gemini (`gemini-2.5-flash`) — `static/` : interface

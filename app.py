@@ -2,7 +2,7 @@
 """Agent chef — mémoire commune, point d'entrée unique, tableau de bord et initiatives.
 
 En local :   python app.py   puis ouvrir http://127.0.0.1:8770
-Sur Render : image Docker ; variables APP_PASSWORD, CLAUDE_CODE_OAUTH_TOKEN, DATABASE_URL,
+Sur Render : image Docker ; variables APP_PASSWORD, GEMINI_API_KEY, DATABASE_URL,
              HUB_TOKEN, CRON_SECRET, EMPLOI_URL, PERSO_URL, PERSO_PASSWORD (voir README).
 """
 import hashlib
@@ -18,6 +18,12 @@ import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 import agents
 import chef
@@ -43,7 +49,12 @@ def api_get(path, query):
         return chef.dashboard()
     if path == "/api/messages":
         dev.sync(30)   # comptes rendus de l'agent développeur arrivés entre-temps sur GitHub
-        return {"messages": chef.history(), "auth": bool(os.getenv("APP_PASSWORD"))}
+        return {
+            "messages": chef.history(),
+            "auth": bool(os.getenv("APP_PASSWORD")),
+            "models": llm.AVAILABLE_MODELS,
+            "default_model": os.getenv("GEMINI_MODEL", llm.DEFAULT_GEMINI_MODEL),
+        }
     if path == "/api/memories":
         return {"categories": memory.CATEGORIES, "items": memory.recall(limit=500),
                 "pending_events": memory.pending_count()}
@@ -56,7 +67,7 @@ def api_get(path, query):
 
 def api_post(path, body):
     if path == "/api/chat":
-        return chef.chat(body.get("message"), body.get("file"))
+        return chef.chat(body.get("message"), body.get("file"), body.get("model"))
     if path == "/api/chat/clear":
         db.run("DELETE FROM messages")
         return {"ok": True}

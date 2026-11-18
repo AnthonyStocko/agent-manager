@@ -10,7 +10,9 @@ services:
         value: admin
       - key: APP_PASSWORD             # mot de passe de l'agent chef
         sync: false
-      - key: CLAUDE_CODE_OAUTH_TOKEN  # jeton d'abonnement (`claude setup-token`)
+      - key: GEMINI_API_KEY           # clé API Google Gemini (modèle gemini-2.5-flash)
+        sync: false
+      - key: CLAUDE_CODE_OAUTH_TOKEN  # facultatif / secours : jeton d'abonnement (`claude setup-token`)
         sync: false
       - key: DATABASE_URL             # base Postgres (Neon, Supabase…) : la mémoire y est conservée
         sync: false
