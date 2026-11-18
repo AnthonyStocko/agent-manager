@@ -130,6 +130,27 @@ un secret (mot de passe, jeton, clé) ou une variable réservée est refusé, le
 main dans Render ; aucune variable n'est supprimée ; les valeurs en place ne sont jamais lues ni affichées.
 La valeur demandée, elle, reste visible dans la discussion.
 
+### Lancer un workflow de déploiement
+
+« Déploie les fonctions Supabase de l'agent Instagram », ou « montre les migrations Supabase en attente
+de l'agent Instagram » : l'agent chef affiche le workflow, l'étape et ce qu'elle fait, et attend **oui**
+ou **non**. Après « oui », l'agent devops lance un seul run du workflow `deploy-supabase.yml` du dépôt de
+l'agent Instagram, sur `main`, et donne le lien pour le suivre dans GitHub Actions.
+
+| Étape | Effet |
+|---|---|
+| `apercu` | liste les migrations en attente, sans rien appliquer |
+| `deployer` | **applique** les migrations en attente à la base, puis déploie toutes les Edge Functions |
+
+Si l'étape n'est pas claire, l'agent chef la demande : il ne choisit jamais `deployer` par défaut. Lance
+`apercu` avant un `deployer` pour voir les migrations qui seront appliquées.
+
+Garde-fous : seuls les workflows de la liste blanche de l'agent devops (inscrite dans son `CLAUDE.md`)
+peuvent être lancés ; un seul run par confirmation, sans relance automatique. Le lancement utilise
+uniquement `DEVOPS_ACTIONS_TOKEN`, un jeton GitHub à granularité fine limité au dépôt
+`mon-guide-agent-instagram`, avec la seule permission « Actions » en lecture et écriture. Il se règle à la
+main dans Render : c'est un secret, l'agent devops refuse de le régler lui-même.
+
 Variables Render de l'agent chef : `RENDER_API_KEY` (Account Settings > API Keys ; elle donne accès à
 tout le compte Render, garde-la uniquement ici), `RENDER_SERVICE_AGENT_EMPLOI` et
 `RENDER_SERVICE_AGENT_PERSO` (identifiants `srv-…`, en haut de la page de chaque service). Le service
