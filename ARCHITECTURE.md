@@ -58,7 +58,7 @@ Les flèches en pointillé sont les accès directs à l'interface de chaque agen
 Les agents ne s'appellent pas entre eux : tout passe par l'agent chef. Seuls agent-emploi (ce qu'il
 apprend, pour la mémoire) et agent-dev (son compte rendu) lui écrivent en retour. L'agent devops ne
 parle pas à l'agent Instagram : sur ordre de l'agent chef, il lance un workflow GitHub de son dépôt
-(autorisé le 18 novembre 2026, pas encore développé).
+(autorisé le 18 novembre 2026).
 
 ## Frontières
 

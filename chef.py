@@ -229,7 +229,7 @@ CONVERSATION RÉCENTE :
 NOUVEAU MESSAGE : {message}
 
 Choisis UNE action et réponds en JSON :
-{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "cle_depot": "", "libelle": "", "description_agent": "", "agent_devops": "", "nom_variable": "", "valeur_variable": "", "reponse": "", "a_retenir": []}}
+{{"action": "...", "offer_id": null, "demande_perso": "", "depot": "", "demande_dev": "", "cle_depot": "", "libelle": "", "description_agent": "", "agent_devops": "", "nom_variable": "", "valeur_variable": "", "workflow_devops": "", "etape_workflow": "", "reponse": "", "a_retenir": []}}
 
 Actions :
 - "repondre" : tu réponds toi-même dans "reponse" (conseil, question sur elle, sur ses offres déjà
@@ -272,6 +272,13 @@ Actions :
   exact de la variable dans "nom_variable" et la valeur, telle qu'elle l'a donnée, dans "valeur_variable".
   N'invente ni le nom ni la valeur : s'il en manque un, ou si l'agent n'est pas clair, utilise "repondre"
   pour le demander. Rien n'est modifié avant sa confirmation.
+- "devops_workflow" : elle demande de déployer les fonctions ou les migrations Supabase de l'agent
+  Instagram, ou de voir les migrations Supabase en attente. Mets "instagram-supabase" dans
+  "workflow_devops" (seul workflow autorisé) et, dans "etape_workflow", « apercu » pour voir les
+  migrations en attente sans rien appliquer, ou « deployer » pour appliquer les migrations et déployer
+  les fonctions. Si l'étape n'est pas claire, utilise "repondre" pour la demander : ne choisis jamais
+  « deployer » par défaut. Pour tout autre workflow, utilise "repondre" : il n'est pas autorisé. Rien
+  n'est lancé avant sa confirmation.
 Avec une pièce jointe et une demande de mail, choisis "perso" : le document sera joint au brouillon au
 moment de la confirmation. Tu ne vois pas le contenu de la pièce jointe : ne le devine pas, et si son
 usage n'est pas clair, demande-le avec "repondre" (elle reste disponible quelques minutes).
@@ -293,6 +300,16 @@ def _dev_confirm(state, confirmed):
     return (f"**Demande lancée** (référence {ref}). L'agent développeur travaille dans GitHub Actions, en "
             "général 5 à 20 minutes. Son compte rendu arrivera dans cette discussion ; l'avancement est "
             "dans l'onglet Développeur.")
+
+
+def _workflow_confirm(state, confirmed):
+    _set_pending("devops_workflow", None)
+    if not confirmed:
+        return "Lancement annulé, aucun workflow n'a été lancé."
+    try:
+        return devops.declencher_workflow(state["cle"], state["entrees"])["resume"]
+    except devops.ErreurDevops as e:
+        return str(e)
 
 
 def _variable_confirm(state, confirmed):
@@ -334,7 +351,10 @@ def chat(message, file=None):
     # Réponse à une demande de confirmation de l'agent perso : traitée sans passer par le modèle
     expense, confirm, devel = _pending("perso_expense"), _pending("perso_confirm"), _pending("dev_confirm")
     creer, variable = _pending("dev_creer"), _pending("devops_variable")
+    workflow = _pending("devops_workflow")
     if not file and (YES.match(message) or NO.match(message)):
+        if workflow:
+            return _direct(message, shown, _workflow_confirm(workflow, bool(YES.match(message))), "devops")
         if variable:
             return _direct(message, shown, _variable_confirm(variable, bool(YES.match(message))), "devops")
         if creer:
@@ -355,6 +375,8 @@ def chat(message, file=None):
         _set_pending("dev_creer", None)
     if variable:
         _set_pending("devops_variable", None)
+    if workflow:
+        _set_pending("devops_workflow", None)
     if file:
         _hold(file)
         if not message:
@@ -467,6 +489,17 @@ def chat(message, file=None):
                 _set_pending("devops_variable", {"agent": d["agent"], "nom": d["nom"], "valeur": d["valeur"]})
                 answer = (f"**Réglage d'une variable sur Render** — à confirmer :\n{d['resume']}\n\n"
                           "Réponds **oui** pour l'enregistrer, **non** pour annuler. Rien n'est modifié avant.")
+        elif action == "devops_workflow":
+            agent_used = "devops"
+            try:   # vérifie la demande sans rien lancer ; le lancement attend la confirmation
+                d = devops.preparer_workflow(plan.get("workflow_devops"),
+                                             {"etape": str(plan.get("etape_workflow") or "").strip().lower()})
+            except devops.ErreurDevops as e:
+                answer = str(e)
+            else:
+                _set_pending("devops_workflow", {"cle": d["cle"], "entrees": d["entrees"]})
+                answer = (f"**Lancement d'un workflow GitHub** — à confirmer :\n{d['resume']}\n\n"
+                          "Réponds **oui** pour le lancer, **non** pour annuler. Rien n'est lancé avant.")
         elif action == "dev":
             agent_used = "dev"
             depot, demande = str(plan.get("depot") or "").strip(), str(plan.get("demande_dev") or "").strip()

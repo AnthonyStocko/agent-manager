@@ -49,11 +49,12 @@ class DevopsTest(unittest.TestCase):
 
         env = {"RENDER_API_KEY": "rnd_secret", "RENDER_SERVICE_ID": "srv-chef", "RENDER_SERVICE_AGENT_MANAGER": "",
                "RENDER_SERVICE_AGENT_EMPLOI": "srv-emploi", "RENDER_SERVICE_AGENT_PERSO": "srv-perso",
-               "GITHUB_TOKEN": "", "DEV_GITHUB_TOKEN": "ghp_dev"}
-        self.ecritures = []
+               "GITHUB_TOKEN": "", "DEV_GITHUB_TOKEN": "ghp_dev", "DEVOPS_ACTIONS_TOKEN": "ghp_actions"}
+        self.ecritures, self.jetons = [], []
 
         def faux_ecrire(methode, url, token, corps, timeout=30):
-            self.ecritures.append((methode, url.split("/v1/")[1], corps))
+            self.ecritures.append((methode, url.split("/v1/")[1] if "/v1/" in url else url.split(".com/")[1], corps))
+            self.jetons.append(token)
             return {}
 
         for p in (mock.patch.object(clients, "_get", faux_get), mock.patch.object(clients, "_ecrire", faux_ecrire),
@@ -96,6 +97,54 @@ class DevopsTest(unittest.TestCase):
         self.assertIn("aaaaaaa", reponse["answer"])
         self.assertIn("bbbbbbb", reponse["answer"])
         self.assertNotIn("rnd_secret", reponse["answer"])
+
+    def demander_workflow(self, etape="deployer", workflow="instagram-supabase"):
+        plan = {"action": "devops_workflow", "workflow_devops": workflow, "etape_workflow": etape,
+                "reponse": "", "a_retenir": []}
+        with mock.patch.object(chef.llm, "ask_json", return_value=plan):
+            return chef.chat("Déploie les fonctions Supabase de l'agent Instagram")["answer"]
+
+    def test_workflow_confirme(self):
+        db.init()
+        reponse = self.demander_workflow()
+        for mot in ("à confirmer", "deploy-supabase.yml", "APPLIQUE les migrations", "Edge Functions", "oui"):
+            self.assertIn(mot, reponse)
+        self.assertEqual(self.ecritures, [])            # rien n'est lancé avant la confirmation
+        reponse = chef.chat("oui")["answer"]            # la confirmation ne passe pas par le modèle
+        self.assertIn("✅", reponse)
+        self.assertEqual(self.ecritures, [
+            ("POST", "repos/AnthonyStocko/mon-guide-agent-instagram/actions/workflows/deploy-supabase.yml/dispatches",
+             {"ref": "main", "inputs": {"etape": "deployer"}})])
+        self.assertEqual(self.jetons, ["ghp_actions"])  # jeton dédié, jamais celui de l'agent développeur
+        self.assertEqual(chef.history()[-1]["agent"], "devops")
+        self.assertNotIn("ghp_", reponse)
+        with mock.patch.object(chef.llm, "ask_json", return_value={"action": "repondre", "reponse": "Oui ?",
+                                                                    "a_retenir": []}):
+            chef.chat("oui")                            # plus rien en attente : ce « oui » ne relance rien
+        self.assertEqual(len(self.ecritures), 1)
+
+    def test_workflow_annule_ou_abandonne(self):
+        db.init()
+        self.demander_workflow(etape="apercu")
+        self.assertIn("aucun workflow", chef.chat("non")["answer"])
+        self.demander_workflow()
+        with mock.patch.object(chef.llm, "ask_json", return_value={"action": "repondre", "reponse": "Bonjour.",
+                                                                    "a_retenir": []}):
+            chef.chat("Au fait, bonjour")               # autre sujet : la demande en attente est abandonnée
+            chef.chat("oui")
+        self.assertEqual(self.ecritures, [])
+
+    def test_workflow_refuse(self):
+        db.init()
+        self.assertIn("non autorisé", self.demander_workflow(workflow="ig-veille"))
+        self.assertIn("doit valoir", self.demander_workflow(etape=""))
+        self.assertIn("doit valoir", self.demander_workflow(etape="detruire"))
+        with mock.patch.dict(os.environ, {"DEVOPS_ACTIONS_TOKEN": ""}):
+            self.assertIn("DEVOPS_ACTIONS_TOKEN", self.demander_workflow())
+        with mock.patch.object(chef.llm, "ask_json", return_value={"action": "repondre", "reponse": "Oui ?",
+                                                                    "a_retenir": []}):
+            chef.chat("oui")
+        self.assertEqual(self.ecritures, [])
 
     def test_variable_confirmee(self):
         db.init()

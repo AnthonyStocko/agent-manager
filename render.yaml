@@ -34,6 +34,8 @@ services:
         sync: false
       - key: RENDER_SERVICE_AGENT_PERSO    # devops : identifiant srv-... du service agent-perso
         sync: false
+      - key: DEVOPS_ACTIONS_TOKEN     # devops : jeton GitHub à granularité fine, dépôt mon-guide-agent-instagram, Actions en écriture
+        sync: false
       - key: INSTAGRAM_URL            # facultatif : lien vers l'administration de l'agent Instagram
         sync: false
       - key: INSTAGRAM_TOKEN          # facultatif : jeton d'accès de l'agent Instagram (commentaires en attente)
