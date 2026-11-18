@@ -15,7 +15,7 @@ Dernière mise à jour : 16 novembre 2026.
 | [agent-emploi](https://github.com/AnthonyStocko/agent-emploi) | Chercher et noter les offres, rédiger CV et lettre, suivre les candidatures, entraîner aux entretiens | Render | Toi ; l'agent chef |
 | [mon-guide-agent-instagram](https://github.com/AnthonyStocko/mon-guide-agent-instagram) | Préparer les publications et les commentaires du compte Instagram de Mon guide, sans rien publier sans ton accord | Supabase, GitHub Actions, Cloudflare | Toi (page d'administration) ; l'agent chef, en lecture seule |
 | [agent-dev](https://github.com/AnthonyStocko/agent-dev) (agent développeur) | Modifier le code des autres agents, le tester et le fusionner si tout est vert | GitHub Actions | L'agent chef ; toi (onglet Actions) |
-| [agent-devops-perso](https://github.com/AnthonyStocko/agent-devops-perso) (agent devops) | S'occuper de la mise en ligne sur Render : dire si ce qui est en ligne correspond au code, régler les variables d'environnement | Dans l'agent chef, installé comme dépendance | L'agent chef |
+| [agent-devops-perso](https://github.com/AnthonyStocko/agent-devops-perso) (agent devops) | S'occuper de la mise en ligne : dire si ce qui est en ligne sur Render correspond au code, régler les variables d'environnement sur Render, lancer les workflows de déploiement autorisés sur GitHub | Dans l'agent chef, installé comme dépendance | L'agent chef |
 
 Mon guide (dépôt `Monguide`) est l'application touristique, pas un agent : l'agent Instagram ne la touche
 jamais, et agent-dev est le seul agent qui peut modifier son code.
@@ -48,14 +48,17 @@ flowchart TD
     chef -->|lecture seule| insta
     chef -->|demande de modification| dev
     dev -->|compte rendu| chef
-    chef -->|déploiements, variables après confirmation| devops
+    chef -->|déploiements, variables et workflows après confirmation| devops
+    devops -.->|workflow de déploiement en liste blanche| insta
 
     dev -->|modifie, teste, fusionne| depots
 ```
 
 Les flèches en pointillé sont les accès directs à l'interface de chaque agent, qui restent possibles.
 Les agents ne s'appellent pas entre eux : tout passe par l'agent chef. Seuls agent-emploi (ce qu'il
-apprend, pour la mémoire) et agent-dev (son compte rendu) lui écrivent en retour.
+apprend, pour la mémoire) et agent-dev (son compte rendu) lui écrivent en retour. L'agent devops ne
+parle pas à l'agent Instagram : sur ordre de l'agent chef, il lance un workflow GitHub de son dépôt
+(autorisé le 18 novembre 2026, pas encore développé).
 
 ## Frontières
 
@@ -103,12 +106,12 @@ opinions, finances, identifiants, tiers).
 | agent-emploi | sa propre base (profil, offres, suivi) | la boîte mail |
 | agent Instagram | son projet Supabase ; Instagram après ton « Approuver » | l'application Mon guide |
 | agent-dev | les dépôts listés dans son `depots.json`, par pull request | `.github/` de chaque dépôt, les fichiers de règles protégés, son propre dépôt |
-| agent-devops-perso | les variables d'environnement de réglage des agents sur Render, après ton « oui » (il lance ensuite le déploiement qui les applique) | les secrets (mots de passe, jetons, clés), le reste de Render, GitHub |
+| agent-devops-perso | après ton « oui » : les variables d'environnement de réglage des agents sur Render (il lance ensuite le déploiement qui les applique) ; le lancement des workflows GitHub de sa liste blanche (aujourd'hui `deploy-supabase.yml` de l'agent Instagram), avec un jeton dédié | les secrets (mots de passe, jetons, clés), le reste de Render, le reste de GitHub (ni commit, ni workflow hors liste) |
 | agent chef | sa mémoire ; il déclenche les autres agents | le code des agents (c'est le rôle d'agent-dev) |
 
 ## Modifier un agent
 
 Toute modification de code passe par agent-dev (onglet Développeur ou discussion de l'agent chef), qui
 lit d'abord le `README.md` et le `CLAUDE.md` ou `PRINCIPES.md` du dépôt visé. Ces fichiers de règles
-sont protégés dans `depots.json` pour l'agent Instagram, agent-perso et agent-devops-perso : un travail
-qui les touche est rejeté en entier.
+sont protégés dans `depots.json` pour tous les agents : un travail qui les touche est rejeté en entier.
+Élargir les droits d'un agent (une nouvelle écriture, par exemple) passe donc toujours par toi.

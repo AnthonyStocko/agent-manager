@@ -15,8 +15,11 @@ Règles non négociables :
   agent) et sur Render (variables). Ces actions passent par `_set_pending`, affichent ce qui sera fait
   et n'agissent qu'à la confirmation, qui ne passe jamais par le modèle. Toute nouvelle action qui écrit
   hors de la base d'agent-emploi suit ce modèle (`devops_variable`, `dev_creer`).
-- L'agent Instagram est en lecture seule : requêtes GET uniquement, jamais de publication ni de
-  validation d'un commentaire.
+- L'agent Instagram est en lecture seule depuis l'agent chef : requêtes GET uniquement sur son API,
+  jamais de publication ni de validation d'un commentaire. Seule exception, qui ne passe pas par son
+  API : l'agent devops peut lancer un workflow GitHub de sa liste blanche (aujourd'hui
+  `deploy-supabase.yml` du dépôt de l'agent Instagram), après un « oui », sur le modèle de
+  `devops_variable`.
 - La mémoire commune ne retient jamais : santé, opinions politiques ou religieuses, origine, vie
   intime, données bancaires, identifiants, mots de passe, ni détails sur des tiers nommés (consigne de
   `memory.py`). Ne pas affaiblir cette liste.
