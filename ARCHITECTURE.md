@@ -13,7 +13,7 @@ Dernière mise à jour : 16 novembre 2026.
 | [agent-manager](https://github.com/AnthonyStocko/agent-manager) (agent chef) | Être le point d'entrée unique : comprendre la demande, la confier au bon agent, retenir ce que les agents apprennent | Render | Toi ; GitHub Actions (point du matin) |
 | [agent-perso](https://github.com/AnthonyStocko/agent-perso) | Tirer des mails ce qu'il y a à faire (agenda, tâches, planning), tenir les comptes communs, préparer des brouillons | Render | Toi ; l'agent chef ; GitHub Actions (traitement du matin) |
 | [agent-emploi](https://github.com/AnthonyStocko/agent-emploi) | Chercher et noter les offres, rédiger CV et lettre, suivre les candidatures, entraîner aux entretiens | Render | Toi ; l'agent chef |
-| [mon-guide-agent-instagram](https://github.com/AnthonyStocko/mon-guide-agent-instagram) | Préparer les publications et les commentaires du compte Instagram de Mon guide, sans rien publier sans ton accord | Supabase, GitHub Actions, Cloudflare | Toi (page d'administration) ; l'agent chef, en lecture seule |
+| [mon-guide-agent-instagram](https://github.com/AnthonyStocko/mon-guide-agent-instagram) | Préparer les publications et les commentaires du compte Instagram de Mon guide, sans rien publier sans ton accord | Supabase, GitHub Actions, Cloudflare | Toi (page d'administration) ; l'agent chef, en lecture seule. Il alimente et lit la mémoire de l'agent chef (ligne éditoriale) |
 | [agent-dev](https://github.com/AnthonyStocko/agent-dev) (agent développeur) | Modifier le code des autres agents, le tester et le fusionner si tout est vert | GitHub Actions | L'agent chef ; toi (onglet Actions) |
 | [agent-devops-perso](https://github.com/AnthonyStocko/agent-devops-perso) (agent devops) | S'occuper de la mise en ligne : dire si ce qui est en ligne sur Render correspond au code, régler les variables d'environnement sur Render, lancer les workflows de déploiement autorisés sur GitHub | Dans l'agent chef, installé comme dépendance | L'agent chef |
 
@@ -47,6 +47,7 @@ flowchart TD
     perso -.->|lit la mémoire, envoie ses préférences| chef
     chef <-->|demandes et mémoire| emploi
     chef -->|lecture seule| insta
+    insta -->|approbations et rejets, ligne éditoriale| chef
     chef -->|demande de modification| dev
     dev -->|contexte du dépôt, puis compte rendu| chef
     chef -->|déploiements, variables et workflows après confirmation| devops
@@ -110,14 +111,18 @@ L'agent chef lit tout et écrit partout, comme ta saisie manuelle. Un agent lit 
 (`GET /agent/memory?espace=…`, avec `&q=…` pour n'avoir que les souvenirs utiles à un texte). Ses événements ne peuvent créer, modifier ou supprimer que des souvenirs
 du commun et de son espace : le code refuse le reste, et le journal le note.
 
-Branchés aujourd'hui : agent-emploi (il lit et alimente le commun et l'espace emploi), agent-dev et
-agent-perso.
+Branchés aujourd'hui : agent-emploi (il lit et alimente le commun et l'espace emploi), agent-dev,
+agent-perso et l'agent Instagram.
 Au début de chaque travail, agent-dev demande à l'agent chef l'historique du dépôt visé et les décisions
 techniques utiles (`GET /agent/dev/contexte`) ; ce contexte va seulement dans sa consigne, jamais sur
 GitHub, car son dépôt est public. Ses comptes rendus alimentent l'espace dev. agent-perso lit le
 commun et ses habitudes sans rien envoyer de la demande en cours, et ne transmet que les préférences que
-tu énonces toi-même sur ta propre organisation : ni contenu de mail, ni données de tiers. L'espace
-Mon guide attend que l'agent Instagram y soit branché.
+tu énonces toi-même sur ta propre organisation : ni contenu de mail, ni données de tiers. L'agent
+Instagram envoie chaque approbation (avec la légende corrigée, s'il y a lieu) et chaque rejet (avec son
+motif) ; l'agent chef en tire la ligne éditoriale de Mon guide, distincte de ton style d'écriture. À
+chaque rédaction, l'agent Instagram lit seulement la ligne éditoriale et le style d'écriture
+(`categories=ligne_editoriale,style_ecriture`), ni ton profil ni les autres espaces. Ce lien n'écrit
+rien chez lui : l'agent chef reste en lecture seule sur l'agent Instagram.
 
 Les données de tiers (contacts, rendez-vous avec d'autres personnes, dépenses) restent chez agent-perso :
 elles n'ont pas de catégorie dans la mémoire commune. Rien de sensible n'y est retenu (santé, opinions,

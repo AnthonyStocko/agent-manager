@@ -25,7 +25,7 @@ Il commande aussi deux agents à part, chacun dans son dépôt :
 |---|---|---|
 | agent-emploi | mémoire dans les deux sens, recherche, candidature, résumé, point du matin | complet |
 | agent-perso | lui transmettre toute demande par sa zone de saisie unique (`/assistant`) : dépenses, tâches, mails, agenda, planning ; confirmation par « oui » / « non » avant toute écriture | complet : il lit le commun et ses habitudes, et transmet les préférences que tu énonces (variables `HUB_URL` et `HUB_TOKEN` sur Render) |
-| agent Instagram Mon guide | consulter les commentaires en attente (lecture seule : discussion « quels commentaires attendent ? » et carte du tableau de bord), lien vers son administration | lecture seule ; validation dans l'agent Instagram |
+| agent Instagram Mon guide | consulter les commentaires en attente (lecture seule : discussion « quels commentaires attendent ? » et carte du tableau de bord), lien vers son administration | lecture seule ; validation dans l'agent Instagram. Il envoie ses approbations et rejets à la mémoire (ligne éditoriale) |
 
 ## Pièces jointes et photos
 
@@ -186,12 +186,13 @@ Les autres agents peuvent demander les souvenirs utiles à un texte : `GET /agen
 ## Comment la mémoire s'enrichit
 
 1. Un agent signale un événement : offre écartée ou retenue, texte corrigé à la main, entretien
-   simulé terminé, profil importé, ou une information que tu donnes dans la discussion.
+   simulé terminé, profil importé, publication Instagram approuvée ou rejetée, ou une information que
+   tu donnes dans la discussion.
 2. L'agent chef compare l'événement à la mémoire existante et ajoute, précise, corrige ou supprime
    des souvenirs. Il ne généralise pas à partir d'un seul cas et ne retient rien de sensible
    (santé, opinions, finances, identifiants, tiers).
 3. Avant de noter une offre, de rédiger ou de préparer un entretien, agent-emploi relit les
-   souvenirs utiles.
+   souvenirs utiles. L'agent Instagram relit la ligne éditoriale de Mon guide avant chaque rédaction.
 
 Tout est visible et modifiable dans l'onglet Mémoire.
 

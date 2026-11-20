@@ -327,6 +327,13 @@ RÈGLES :
   détail d'une modification. Une modification ordinaire, fusionnée sans difficulté, ne mérite rien.
 - Habitudes : seulement les siennes (rythme, horaires, façon de planifier), jamais ses contacts, ses
   rendez-vous avec d'autres personnes ni ses dépenses : ils restent chez l'agent perso.
+- Ligne éditoriale (approbations et rejets de l'agent Instagram de Mon guide) : retiens ce qu'il
+  accepte ou refuse pour le compte Mon guide (ton, longueur, sujets, formules), dans la catégorie
+  « ligne_editoriale », jamais dans « style_ecriture » (c'est la voix de Mon guide, pas la sienne).
+  Une légende corrigée : compare la proposée et l'approuvée et retiens la règle, pas le texte. Un
+  rejet isolé donne « A rejeté une publication sur … (raison : …) » ; une règle générale seulement
+  quand plusieurs approbations ou rejets vont dans le même sens. Une approbation sans correction ne
+  mérite rien, sauf si elle confirme une règle déjà retenue.
 - importance : 1 (anecdotique) à 5 (essentiel).
 - Un fait temporaire (une période de disponibilité, un projet en cours) reçoit "valable_jusqu_au" :
   la date (AAAA-MM-JJ) après laquelle il ne sera plus utilisé. Aujourd'hui : {today}.
