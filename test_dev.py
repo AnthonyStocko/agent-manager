@@ -24,7 +24,7 @@ import dev  # noqa: E402
 class DevTest(unittest.TestCase):
     def setUp(self):
         db.init()
-        for table in ("dev_requests", "messages", "kv"):
+        for table in ("dev_requests", "messages", "kv", "events", "memories"):
             db.run(f"DELETE FROM {table}")
         self.appels = []
         self.runs = []
@@ -34,10 +34,46 @@ class DevTest(unittest.TestCase):
             self.appels.append((methode, chemin, corps))
             return {"workflow_runs": self.runs}
 
-        for p in (mock.patch.object(dev, "_github", faux_github),
+        # Les comptes rendus envoient un événement à la mémoire : pas de traitement par le modèle ici
+        for p in (mock.patch.object(dev, "_github", faux_github), mock.patch.object(dev.memory.threading, "Thread"),
                   mock.patch.dict(os.environ, {"DEV_GITHUB_TOKEN": "ghp_test"})):
             p.start()
             self.addCleanup(p.stop)
+
+    def test_contexte_de_projet(self):
+        anciens = [dev.submit("agent-emploi", "Trie les offres par date de publication"),
+                   dev.submit("agent-perso", "Classe les brouillons par urgence"),
+                   dev.submit("agent-emploi", "Ajoute un filtre sur le télétravail")]
+        for i, ref in enumerate(anciens):   # créées dans la même seconde : on les date
+            db.run("UPDATE dev_requests SET created_at = ? WHERE ref = ?", (f"2026-11-1{i + 1}T10:00:00+00:00", ref))
+        dev.report({"id": anciens[0], "statut": "fusionne", "titre": "Tri par date", "resume": "Offres triées.\nTests verts."})
+        dev.report({"id": anciens[2], "statut": "refuse", "titre": "", "resume": "CLAUDE.md interdit ce changement."})
+        dev.memory.add("decisions_techniques", "Un dépôt par agent, jamais de module dans l'agent chef", "manuel")
+        dev.memory.add("decisions_techniques", "Le filtre télétravail doit rester désactivable", "manuel")
+        dev.memory.add("profil", "Chef de projet à Lyon", "manuel")
+        courant = dev.submit("agent-emploi", "Ajoute à nouveau un filtre sur le télétravail")
+        texte = dev.contexte_projet("agent-emploi", courant)
+        self.assertIn("[travail refusé (chemin interdit), rien n'a été poussé] Ajoute un filtre sur le télétravail — "
+                      "CLAUDE.md interdit ce changement.", texte)
+        self.assertIn("[modification fusionnée, le déploiement suit] Tri par date — Offres triées. Tests verts.", texte)
+        self.assertLess(texte.index("télétravail —"), texte.index("Tri par date"))   # plus récente d'abord
+        self.assertNotIn("Ajoute à nouveau", texte)          # la demande en cours n'y figure pas
+        self.assertNotIn("brouillons", texte)                # autre dépôt
+        self.assertIn("Le filtre télétravail doit rester désactivable", texte)
+        self.assertIn("Un dépôt par agent", texte)
+        self.assertNotIn("Lyon", texte)                      # seul l'espace « dev » de la mémoire est transmis
+        self.assertEqual(dev.contexte_projet("depot-inconnu", courant), "")
+        route = app.agent_api("GET", "/agent/dev/contexte", {"depot": ["agent-emploi"], "id": [courant]}, {})
+        self.assertEqual(route, {"texte": texte})
+
+    def test_compte_rendu_envoye_a_la_memoire(self):
+        ref = dev.submit("agent-perso", "Classe les brouillons par urgence")
+        dev.report({"id": ref, "statut": "refuse", "titre": "", "resume": "Chemin interdit."})
+        dev.report({"id": ref, "statut": "refuse", "titre": "", "resume": "Chemin interdit."})   # reçu deux fois
+        events = db.run("SELECT * FROM events")
+        self.assertEqual([(e["agent"], e["kind"]) for e in events], [("dev", "compte_rendu")])
+        for mot in ("agent-perso", "Classe les brouillons par urgence", "travail refusé", "Chemin interdit."):
+            self.assertIn(mot, events[0]["content"])
 
     def test_lancer_une_demande_declenche_le_workflow(self):
         ref = app.api_post("/api/dev", {"depot": "agent-emploi", "demande": "Trie les offres par date de publication"})["ref"]
@@ -209,7 +245,7 @@ class CreerAgentTest(unittest.TestCase):
                 self.fichier = json.loads(base64.b64decode(corps["content"]))
             return {}
 
-        for p in (mock.patch.object(dev, "_github", faux_github),
+        for p in (mock.patch.object(dev, "_github", faux_github), mock.patch.object(dev.memory.threading, "Thread"),
                   mock.patch.dict(os.environ, {"DEV_GITHUB_TOKEN": "ghp_secret"})):
             p.start()
             self.addCleanup(p.stop)

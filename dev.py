@@ -17,7 +17,9 @@ import urllib.error
 import urllib.request
 import zipfile
 
+import contexte
 import db
+import memory
 
 WORKFLOW = "developpeur.yml"
 # Dépôts modifiables : la liste de référence est `depots.json` dans agent-dev, relue toutes les dix
@@ -286,6 +288,38 @@ def _suite_creation(ref, statut):
             "discussion après le déploiement de l'agent chef.")
 
 
+HISTORIQUE_MAX = 12        # demandes précédentes du dépôt transmises à l'agent développeur
+DECISIONS_BUDGET = 2000    # caractères de décisions techniques
+
+
+def contexte_projet(depot, ref=""):
+    """Ce que l'agent développeur doit savoir avant de travailler sur un dépôt : les demandes précédentes
+    sur ce dépôt et leur résultat, puis les décisions techniques de la mémoire utiles à la demande.
+
+    Lu par agent-dev au début de chaque travail (GET /agent/dev/contexte). Seul l'espace « dev » de la
+    mémoire est transmis : le profil et les autres espaces restent ici."""
+    if depot not in depots():
+        return ""
+    lignes, demande = [], ""
+    for r in db.run("SELECT * FROM dev_requests WHERE depot = ? ORDER BY created_at DESC LIMIT ?",
+                    (depot, HISTORIQUE_MAX + 1)):
+        if r["ref"] == ref:
+            demande = r["demande"] or ""
+            continue
+        quoi = " ".join(str(r.get("titre") or r.get("demande") or "").split())[:140]
+        detail = " ".join(str(r.get("resume") or "").split())[:300]
+        lignes.append(f"- {str(r['created_at'])[:10]} [{LIBELLES.get(r['statut'], 'en cours')}] {quoi}"
+                      + (f" — {detail}" if detail else ""))
+    blocs = []
+    if lignes:
+        blocs.append("Demandes précédentes sur ce dépôt (de la plus récente à la plus ancienne) :\n"
+                     + "\n".join(lignes[:HISTORIQUE_MAX]))
+    decisions = contexte.choisir(memory.recall(["decisions_techniques"], limit=500), demande, DECISIONS_BUDGET)
+    if decisions:
+        blocs.append("Décisions techniques retenues :\n" + "\n".join(f"- {m['content']}" for m in decisions))
+    return "\n\n".join(blocs)
+
+
 def report(body):
     """Compte rendu envoyé par le workflow à la fin du travail : met la demande à jour et l'annonce
     dans la discussion."""
@@ -317,6 +351,11 @@ def report(body):
     # Les comptes rendus vont dans le fil Développement de la discussion, quel que soit le fil de la demande
     db.run("INSERT INTO messages(role, content, agent, created_at, fil) VALUES(?,?,?,?,?)",
            ("assistant", text, "dev", db.now(), "dev"))
+    # La mémoire en tire, s'il y a lieu, des décisions techniques (espace « dev »)
+    demande = (db.run("SELECT demande FROM dev_requests WHERE ref = ?", (ref,)) or [{}])[0].get("demande") or ""
+    memory.add_event("dev", "compte_rendu", (
+        f"Demande à l'agent développeur sur le dépôt {depot} : {demande[:1500]}\n"
+        f"Résultat : {LIBELLES[statut]}.\n" + (f"Titre : {titre}\n" if titre else "") + f"Compte rendu : {resume[:2500]}"))
     suite = _suite_creation(ref, statut)
     if suite:
         db.run("INSERT INTO messages(role, content, agent, created_at, fil) VALUES(?,?,?,?,?)",
