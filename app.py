@@ -27,6 +27,7 @@ except ImportError:
 
 import agents
 import chef
+import contexte
 import db
 import agent_devops as devops   # dépôt agent-devops-perso, installé par requirements.txt
 import dev
@@ -49,8 +50,10 @@ def api_get(path, query):
         return chef.dashboard()
     if path == "/api/messages":
         dev.sync(30)   # comptes rendus de l'agent développeur arrivés entre-temps sur GitHub
+        fil = chef.fil_valide((query.get("fil") or ["general"])[0])
         return {
-            "messages": chef.history(),
+            "messages": chef.history(fil=fil),
+            "fil": fil, "fils": chef.FILS, "derniers": chef.derniers_messages(),
             "auth": bool(os.getenv("APP_PASSWORD")),
             "models": llm.AVAILABLE_MODELS,
             "default_model": os.getenv("GEMINI_MODEL", llm.DEFAULT_GEMINI_MODEL),
@@ -70,9 +73,11 @@ def api_get(path, query):
 
 def api_post(path, body):
     if path == "/api/chat":
-        return chef.chat(body.get("message"), body.get("file"), body.get("model"))
+        return chef.chat(body.get("message"), body.get("file"), body.get("model"), body.get("fil") or "general")
     if path == "/api/chat/clear":
-        db.run("DELETE FROM messages")
+        fil = chef.fil_valide(body.get("fil") or "general")
+        db.run("DELETE FROM messages WHERE fil = ?", (fil,))
+        contexte.effacer_resume(fil)
         return {"ok": True}
     if path == "/api/dev":
         return {"ref": dev.submit(body.get("depot"), body.get("demande"))}
@@ -110,6 +115,9 @@ def agent_api(method, path, query, body):
         # ?espace=emploi : « commun » et l'espace de l'agent ; ?categories=a,b : ces catégories seulement
         cats = [c for c in (query.get("categories", [""])[0]).split(",") if c] or None
         espace = (query.get("espace", [""])[0]).strip() or None
+        q = (query.get("q", [""])[0]).strip()
+        if q and not cats:   # ?q=… : les souvenirs les plus utiles pour ce texte, dans un budget
+            return {"text": contexte.memoire(q[:3000], espace)}
         return {"text": memory.as_text(cats, int(query.get("limit", ["40"])[0]), espace=espace)}
     if method == "POST" and path == "/agent/events":
         memory.add_event(body.get("agent") or "inconnu", body.get("kind") or "evenement", body.get("content"))

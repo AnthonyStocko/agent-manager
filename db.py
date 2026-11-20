@@ -67,6 +67,7 @@ COLUMNS = [
     ("memories", "event_ids", "TEXT DEFAULT ''"),    # événements d'où vient le souvenir (ids, séparés par des virgules)
     ("memories", "confirmed_at", "TEXT"),            # dernière fois qu'un événement l'a confirmé ou précisé
     ("memories", "valid_until", "TEXT"),             # date (AAAA-MM-JJ) après laquelle il n'est plus utilisé
+    ("messages", "fil", "TEXT DEFAULT 'general'"),   # fil de discussion (chef.FILS)
 ]
 
 

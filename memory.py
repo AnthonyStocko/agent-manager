@@ -163,8 +163,13 @@ def recall(categories=None, limit=60, include_expired=False, espace=None):
 
 def as_text(categories=None, limit=60, espace=None):
     """Bloc de texte à glisser dans le prompt d'un agent."""
+    return format_items(recall(categories, limit, espace=espace))
+
+
+def format_items(items):
+    """Souvenirs en texte, groupés par catégorie dans l'ordre de CATEGORIES."""
     lines, current = [], None
-    for m in sorted(recall(categories, limit, espace=espace), key=lambda m: list(CATEGORIES).index(m["category"])):
+    for m in sorted(items, key=lambda m: list(CATEGORIES).index(m["category"])):
         if m["category"] != current:
             current = m["category"]
             lines.append(f"{CATEGORIES[current]} :")

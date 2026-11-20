@@ -106,7 +106,7 @@ découpée en espaces (`memory.py`) :
 | Dev | décisions techniques | agent-dev | agent-dev, agent devops |
 
 L'agent chef lit tout et écrit partout, comme ta saisie manuelle. Un agent lit le commun et son espace
-(`GET /agent/memory?espace=…`). Ses événements ne peuvent créer, modifier ou supprimer que des souvenirs
+(`GET /agent/memory?espace=…`, avec `&q=…` pour n'avoir que les souvenirs utiles à un texte). Ses événements ne peuvent créer, modifier ou supprimer que des souvenirs
 du commun et de son espace : le code refuse le reste, et le journal le note.
 
 Aujourd'hui, seul agent-emploi lit et alimente la mémoire ; les espaces perso, Mon guide et dev

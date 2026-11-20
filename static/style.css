@@ -63,3 +63,7 @@ ul.plain { padding-left:18px; margin:6px 0; }
 .chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .chip button { border:0; padding:0 4px; font-size:16px; }
 details summary { cursor:pointer; color:var(--mute); font-size:13px; }
 h2.espace { margin:24px 0 8px; font-size:15px; text-transform:uppercase; letter-spacing:.04em; color:var(--mute); }
+.fils { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+.fils button { padding:6px 12px; border-radius:999px; font-size:14px; }
+.fils button.actif { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+.fils .nouveau { color:var(--bad); font-weight:700; }

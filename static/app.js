@@ -53,8 +53,25 @@ function addMessage(m) {
   $("#chat-log").appendChild(div); div.scrollIntoView({ block: "end" });
   return div;
 }
+// Fils de discussion : chacun a son historique ; un point signale un fil qui a reçu des messages depuis
+// ta dernière visite (par exemple un compte rendu de l'agent développeur dans « Développement »).
+let fil = localStorage.getItem("agent_chef_fil") || "general";
+function vus() { try { return JSON.parse(localStorage.getItem("agent_chef_fils_vus") || "{}"); } catch { return {}; } }
+function marquerVu(f, id) { const v = vus(); v[f] = Math.max(v[f] || 0, id || 0); localStorage.setItem("agent_chef_fils_vus", JSON.stringify(v)); }
+function afficherFils(r) {
+  const v = vus();
+  $("#fils").innerHTML = Object.entries(r.fils).map(([k, nom]) =>
+    `<button type="button" data-fil="${k}" class="${k === fil ? "actif" : ""}"${k === fil ? ' aria-current="true"' : ""}>${esc(nom)}${
+      k !== fil && (r.derniers[k] || 0) > (v[k] || 0) ? ' <span class="nouveau" title="Nouveaux messages">•</span>' : ""}</button>`).join("");
+  $("#fils").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    fil = b.dataset.fil; localStorage.setItem("agent_chef_fil", fil); loadChat().catch((e) => toast(e.message));
+  });
+}
 async function loadChat() {
-  const r = await api("/api/messages");
+  let r;
+  try { r = await api("/api/messages?fil=" + encodeURIComponent(fil)); }
+  catch (er) { if (fil === "general") throw er; fil = "general"; localStorage.setItem("agent_chef_fil", fil); r = await api("/api/messages?fil=general"); }
+  marquerVu(fil, r.derniers[fil]); afficherFils(r);
   $("#logout").hidden = !r.auth; $("#chat-log").innerHTML = "";
   if (r.models && $("#chat-model")) {
     const saved = localStorage.getItem("agent_chef_model") || r.default_model || "";
@@ -65,7 +82,9 @@ async function loadChat() {
       localStorage.setItem("agent_chef_model", $("#chat-model").value);
     };
   }
-  if (!r.messages.length) addMessage({ role: "assistant", content: "Bonjour. Je coordonne tes agents et je retiens ce que j'apprends de toi. Que veux-tu faire ?" });
+  if (!r.messages.length) addMessage({ role: "assistant", content: fil === "general"
+    ? "Bonjour. Je coordonne tes agents et je retiens ce que j'apprends de toi. Que veux-tu faire ?"
+    : `Fil « ${r.fils[fil]} » : les échanges sur ce sujet restent ici, avec leur propre historique.` });
   r.messages.forEach(addMessage);
 }
 // Pièce jointe : un fichier choisi ou une photo prise avec l'appareil du téléphone
@@ -118,7 +137,7 @@ $("#chat-form").onsubmit = async (e) => {
   const wait = addMessage({ role: "assistant", content: "Je m'en occupe… (une recherche d'offres peut prendre plusieurs minutes)" });
   const btn = $("#chat-send"); btn.disabled = true;
   try {
-    const payload = file ? { message: text, file } : { message: text };
+    const payload = file ? { message: text, file, fil } : { message: text, fil };
     const selModel = $("#chat-model") ? $("#chat-model").value : undefined;
     if (selModel) payload.model = selModel;
     const r = await api("/api/chat", payload);
@@ -129,8 +148,8 @@ $("#chat-form").onsubmit = async (e) => {
 };
 $("#chat-input").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); } };
 $("#chat-clear").onclick = async () => {
-  if (!confirm("Effacer la discussion ? La mémoire est conservée.")) return;
-  await api("/api/chat/clear", {}); loadChat();
+  if (!confirm("Effacer ce fil de discussion ? Les autres fils et la mémoire sont conservés.")) return;
+  await api("/api/chat/clear", { fil }); loadChat();
 };
 
 // ---------- tableau de bord ----------
