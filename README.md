@@ -168,6 +168,13 @@ de l'agent chef est reconnu tout seul, et GitHub est lu avec `DEV_GITHUB_TOKEN`.
 
 Tout est visible et modifiable dans l'onglet Mémoire.
 
+### Espaces
+
+La mémoire est découpée en espaces : **commun** (profil, préférences, style d'écriture), **emploi**,
+**perso**, **Mon guide** et **dev**. Un agent lit le commun et son espace
+(`GET /agent/memory?espace=emploi`) et n'écrit que dans ces deux-là ; l'agent chef et ta saisie
+manuelle écrivent partout. Le détail est dans [ARCHITECTURE.md](ARCHITECTURE.md), « La mémoire commune ».
+
 ### Garde-fous
 
 - **Données sensibles refusées par le code**, et pas seulement par la consigne du modèle : santé,

@@ -56,7 +56,8 @@ def api_get(path, query):
             "default_model": os.getenv("GEMINI_MODEL", llm.DEFAULT_GEMINI_MODEL),
         }
     if path == "/api/memories":
-        return {"categories": memory.CATEGORIES, "items": memory.recall(limit=500, include_expired=True),
+        return {"categories": memory.CATEGORIES, "espaces": memory.ESPACES, "categorie_espace": memory.CATEGORIE_ESPACE,
+                "items": memory.recall(limit=500, include_expired=True),
                 "pending_events": memory.pending_count(), "today": memory._today()}
     if path == "/api/memories/journal":
         return {"items": memory.journal(100), "days": memory.JOURNAL_DAYS}
@@ -106,8 +107,10 @@ def agent_api(method, path, query, body):
     """Routes réservées aux agents chapeautés : lire la mémoire, envoyer un événement, et compte
     rendu de l'agent développeur."""
     if method == "GET" and path == "/agent/memory":
+        # ?espace=emploi : « commun » et l'espace de l'agent ; ?categories=a,b : ces catégories seulement
         cats = [c for c in (query.get("categories", [""])[0]).split(",") if c] or None
-        return {"text": memory.as_text(cats, int(query.get("limit", ["40"])[0]))}
+        espace = (query.get("espace", [""])[0]).strip() or None
+        return {"text": memory.as_text(cats, int(query.get("limit", ["40"])[0]), espace=espace)}
     if method == "POST" and path == "/agent/events":
         memory.add_event(body.get("agent") or "inconnu", body.get("kind") or "evenement", body.get("content"))
         return {"ok": True}

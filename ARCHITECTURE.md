@@ -94,9 +94,27 @@ Elles sont volontairement séparées et ne s'appellent pas. Chacune est lancée 
 
 ### La mémoire commune
 
-Elle appartient à l'agent chef (base Postgres). Seul agent-emploi la lit et l'alimente aujourd'hui.
-agent-perso et l'agent Instagram ne la partagent pas. Rien de sensible n'y est retenu (santé,
-opinions, finances, identifiants, tiers).
+Elle appartient à l'agent chef (base Postgres sur Neon, sauvegardée chaque nuit, chiffrée). Elle est
+découpée en espaces (`memory.py`) :
+
+| Espace | Catégories | Lu par | Écrit par |
+|---|---|---|---|
+| Commun | profil, préférences de travail, style d'écriture | tous les agents | tous les agents |
+| Emploi | goûts en offres, récits d'expérience, points à travailler | agent-emploi | agent-emploi |
+| Perso | habitudes d'organisation | agent-perso | agent-perso |
+| Mon guide | ligne éditoriale | l'agent Instagram | l'agent Instagram |
+| Dev | décisions techniques | agent-dev | agent-dev, agent devops |
+
+L'agent chef lit tout et écrit partout, comme ta saisie manuelle. Un agent lit le commun et son espace
+(`GET /agent/memory?espace=…`). Ses événements ne peuvent créer, modifier ou supprimer que des souvenirs
+du commun et de son espace : le code refuse le reste, et le journal le note.
+
+Aujourd'hui, seul agent-emploi lit et alimente la mémoire ; les espaces perso, Mon guide et dev
+attendent que leurs agents y soient branchés.
+
+Les données de tiers (contacts, rendez-vous avec d'autres personnes, dépenses) restent chez agent-perso :
+elles n'ont pas de catégorie dans la mémoire commune. Rien de sensible n'y est retenu (santé, opinions,
+origine, vie intime, données bancaires, identifiants) : le code le refuse, quelle que soit l'origine.
 
 ### Qui a le droit d'écrire où
 

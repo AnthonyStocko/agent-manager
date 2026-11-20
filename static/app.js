@@ -184,19 +184,22 @@ $("#board-morning").onclick = (e) => busy(e.target, "Lancement…", async () => 
 async function loadMemory() {
   const r = await api("/api/memories");
   const sel = $("#mem-cat");
-  if (!sel.options.length) sel.innerHTML = Object.entries(r.categories).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+  if (!sel.options.length) sel.innerHTML = Object.entries(r.espaces).map(([e, nom]) => `<optgroup label="${esc(nom)}">`
+    + Object.entries(r.categories).filter(([k]) => r.categorie_espace[k] === e).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")
+    + "</optgroup>").join("");
   $("#mem-pending").innerHTML = r.pending_events
     ? `${r.pending_events} événement(s) en attente de traitement. <button id="mem-process">Traiter maintenant</button>` : "";
   const p = $("#mem-process");
   if (p) p.onclick = (e) => busy(e.target, "Traitement…", async () => { const x = await api("/api/memories/process", {}); toast(`${x.applied} souvenir(s) mis à jour.`); await loadMemory(); });
-  $("#mem-list").innerHTML = Object.entries(r.categories).map(([k, label]) => {
+  $("#mem-list").innerHTML = Object.entries(r.espaces).map(([e, nom]) => `<h2 class="espace">${esc(nom)}</h2>`
+    + Object.entries(r.categories).filter(([k]) => r.categorie_espace[k] === e).map(([k, label]) => {
     const items = r.items.filter((m) => m.category === k);
     return `<div class="card" style="margin-bottom:16px"><h2>${esc(label)} <small style="color:var(--mute)">(${items.length})</small></h2>
       ${items.map((m) => `<div class="mem" data-id="${m.id}"><div><span class="txt">${esc(m.content)}</span><br>
         <small>importance ${m.importance}/5 · source : ${esc(m.source || "?")}${m.event_ids ? ` (événements ${esc(m.event_ids)})` : ""} · ${m.confirmed_at ? "confirmé le " + esc(m.confirmed_at.slice(0, 10)) : esc((m.updated_at || "").slice(0, 10))}${m.valid_until ? ` · ${m.valid_until < r.today ? "<b>expiré</b> le" : "valable jusqu'au"} ${esc(m.valid_until)}` : ""}</small></div>
         <div><button data-act="edit">Modifier</button> <button data-act="del">Supprimer</button></div></div>`).join("")
         || '<p class="hint">Rien pour l\'instant.</p>'}</div>`;
-  }).join("");
+  }).join("")).join("");
   $("#mem-list").querySelectorAll(".mem button").forEach((b) => b.onclick = async () => {
     const row = b.closest(".mem"), id = row.dataset.id;
     try {

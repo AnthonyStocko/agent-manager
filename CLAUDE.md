@@ -21,8 +21,13 @@ Règles non négociables :
   `deploy-supabase.yml` du dépôt de l'agent Instagram), après un « oui », sur le modèle de
   `devops_variable`.
 - La mémoire commune ne retient jamais : santé, opinions politiques ou religieuses, origine, vie
-  intime, données bancaires, identifiants, mots de passe, ni détails sur des tiers nommés (consigne de
-  `memory.py`). Ne pas affaiblir cette liste.
+  intime, données bancaires, identifiants, mots de passe, ni détails sur des tiers nommés. Le filtre
+  du code (`memory.sensitive_reason`) et la consigne du modèle l'appliquent tous les deux. Ne pas
+  affaiblir cette liste ni ce filtre.
+- La mémoire est découpée en espaces (`memory.ESPACES`). Un agent lit « commun » et son espace ; ses
+  événements n'écrivent que dans ces deux-là (`memory.categories_ecrites_par`). Les données de tiers
+  d'agent-perso n'y entrent pas. Toute écriture passe par `add`, `update` ou `delete`, qui tiennent le
+  journal des changements.
 - Accès : les pages et `/api/` exigent une session ; les routes des autres agents exigent `HUB_TOKEN` ;
   le point du matin exige `CRON_SECRET`. Sur Render, sans `APP_PASSWORD`, l'appli refuse toute demande
   (réponse 503).
