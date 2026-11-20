@@ -44,6 +44,7 @@ flowchart TD
     cron --> perso
 
     chef -->|demandes, confirmation avant écriture| perso
+    perso -.->|lit la mémoire, envoie ses préférences| chef
     chef <-->|demandes et mémoire| emploi
     chef -->|lecture seule| insta
     chef -->|demande de modification| dev
@@ -55,8 +56,8 @@ flowchart TD
 ```
 
 Les flèches en pointillé sont les accès directs à l'interface de chaque agent, qui restent possibles.
-Les agents ne s'appellent pas entre eux : tout passe par l'agent chef. Seuls agent-emploi (ce qu'il
-apprend, pour la mémoire) et agent-dev (son compte rendu) lui écrivent en retour. L'agent devops ne
+Les agents ne s'appellent pas entre eux : tout passe par l'agent chef. Seuls agent-emploi et agent-perso (ce
+qu'ils apprennent, pour la mémoire) et agent-dev (son compte rendu) lui écrivent en retour. L'agent devops ne
 parle pas à l'agent Instagram : sur ordre de l'agent chef, il lance un workflow GitHub de son dépôt
 (autorisé le 18 novembre 2026).
 
@@ -112,8 +113,10 @@ du commun et de son espace : le code refuse le reste, et le journal le note.
 Branchés aujourd'hui : agent-emploi (il lit et alimente le commun et l'espace emploi) et agent-dev.
 Au début de chaque travail, agent-dev demande à l'agent chef l'historique du dépôt visé et les décisions
 techniques utiles (`GET /agent/dev/contexte`) ; ce contexte va seulement dans sa consigne, jamais sur
-GitHub, car son dépôt est public. Ses comptes rendus alimentent l'espace dev. Les espaces perso et
-Mon guide attendent que leurs agents y soient branchés.
+GitHub, car son dépôt est public. Ses comptes rendus alimentent l'espace dev. agent-perso lit le
+commun et ses habitudes sans rien envoyer de la demande en cours, et ne transmet que les préférences que
+tu énonces toi-même sur ta propre organisation : ni contenu de mail, ni données de tiers. L'espace
+Mon guide attend que l'agent Instagram y soit branché.
 
 Les données de tiers (contacts, rendez-vous avec d'autres personnes, dépenses) restent chez agent-perso :
 elles n'ont pas de catégorie dans la mémoire commune. Rien de sensible n'y est retenu (santé, opinions,
