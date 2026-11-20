@@ -24,7 +24,7 @@ Il commande aussi deux agents à part, chacun dans son dépôt :
 | Agent | Ce que l'agent chef sait faire | État |
 |---|---|---|
 | agent-emploi | mémoire dans les deux sens, recherche, candidature, résumé, point du matin | complet |
-| agent-perso | lui transmettre toute demande par sa zone de saisie unique (`/assistant`) : dépenses, tâches, mails, agenda, planning ; confirmation par « oui » / « non » avant toute écriture | sans modification d'agent-perso ; pas encore de mémoire partagée |
+| agent-perso | lui transmettre toute demande par sa zone de saisie unique (`/assistant`) : dépenses, tâches, mails, agenda, planning ; confirmation par « oui » / « non » avant toute écriture | complet : il lit le commun et ses habitudes, et transmet les préférences que tu énonces (variables `HUB_URL` et `HUB_TOKEN` sur Render) |
 | agent Instagram Mon guide | consulter les commentaires en attente (lecture seule : discussion « quels commentaires attendent ? » et carte du tableau de bord), lien vers son administration | lecture seule ; validation dans l'agent Instagram |
 
 ## Pièces jointes et photos
