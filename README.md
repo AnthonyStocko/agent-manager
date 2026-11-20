@@ -156,6 +156,25 @@ tout le compte Render, garde-la uniquement ici), `RENDER_SERVICE_AGENT_EMPLOI` e
 `RENDER_SERVICE_AGENT_PERSO` (identifiants `srv-…`, en haut de la page de chaque service). Le service
 de l'agent chef est reconnu tout seul, et GitHub est lu avec `DEV_GITHUB_TOKEN`.
 
+## Fils de discussion et contexte
+
+La discussion est rangée en **fils par sujet** : Général, Emploi, Perso, Mon guide, Développement.
+Chaque fil a son historique, son résumé et ses confirmations en attente : un « oui » ne confirme que ce
+qui a été proposé dans le même fil. Les comptes rendus de l'agent développeur arrivent toujours dans le
+fil Développement, et un point rouge signale un fil qui a reçu des messages depuis ta dernière visite.
+« Effacer ce fil » n'efface que le fil affiché ; la mémoire est conservée.
+
+À chaque message, le modèle reçoit un contexte borné (`contexte.py`) :
+
+- **Souvenirs** : 3 000 caractères au plus. D'abord le socle (préférences de travail et souvenirs
+  d'importance 5), puis les souvenirs qui partagent des mots avec ta demande et tes messages récents,
+  puis les plus importants. Dans un fil, ceux de son espace de mémoire passent avant les autres ;
+  le fil Général puise dans toute la mémoire.
+- **Conversation** : les 10 derniers messages du fil, précédés d'un **résumé glissant** des plus anciens.
+  Le résumé est mis à jour en arrière-plan dès que 8 messages sont sortis de la fenêtre récente.
+
+Les autres agents peuvent demander les souvenirs utiles à un texte : `GET /agent/memory?espace=emploi&q=…`.
+
 ## Comment la mémoire s'enrichit
 
 1. Un agent signale un événement : offre écartée ou retenue, texte corrigé à la main, entretien
@@ -272,7 +291,8 @@ Pour restaurer, sur ton ordinateur :
 - `CLAUDE.md` : règles non négociables, lues par l'agent développeur avant toute modification
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
 - `memory.py` : mémoire, extraction des souvenirs, filtre des données sensibles, journal et annulation
-- `sauvegarde.py` : export et restauration de la base (sauvegarde de chaque nuit) — `agents.py` : connexion aux agents
+- `sauvegarde.py` : export et restauration de la base (sauvegarde de chaque nuit)
+- `contexte.py` : souvenirs pertinents dans un budget, conversation par fil et résumé glissant — `agents.py` : connexion aux agents
 - `dev.py` : commande de l'agent développeur (dépôt agent-dev)
 - vérification des déploiements Render : paquet `agent_devops`, installé depuis le dépôt agent-devops-perso
 - `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Google Gemini (`gemini-2.5-flash`) — `static/` : interface

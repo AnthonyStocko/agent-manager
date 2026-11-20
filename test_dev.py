@@ -81,7 +81,7 @@ class DevTest(unittest.TestCase):
         item = dev.listing()["items"][0]
         self.assertEqual((item["statut"], item["titre"]), ("fusionne", "Brouillons triés"))
         self.assertEqual(item["run_url"], "")   # seuls les liens github.com sont gardés
-        message = chef.history()[-1]
+        message = chef.history(fil="dev")[-1]
         self.assertEqual(message["agent"], "dev")
         self.assertIn("Agent perso", message["content"])
         self.assertIn("pull/3", message["content"])
@@ -127,12 +127,12 @@ class DevTest(unittest.TestCase):
         lecture.assert_called_once_with(77)
         item = dev.listing()["items"][0]
         self.assertEqual((item["statut"], item["titre"], item["run_url"][-7:]), ("fusionne", "Offres triées", "runs/77"))
-        messages = [m for m in chef.history() if m["agent"] == "dev"]
+        messages = [m for m in chef.history(fil="dev") if m["agent"] == "dev"]
         self.assertEqual(len(messages), 1)
         self.assertIn("pull/4", messages[0]["content"])
         # L'envoi direct qui arriverait ensuite ne crée pas de doublon
         dev.report(rapport)
-        self.assertEqual(len([m for m in chef.history() if m["agent"] == "dev"]), 1)
+        self.assertEqual(len([m for m in chef.history(fil="dev") if m["agent"] == "dev"]), 1)
 
     def test_sans_compte_rendu_sur_github_la_demande_passe_en_erreur(self):
         self._demande_terminee()
@@ -268,7 +268,7 @@ class CreerAgentTest(unittest.TestCase):
                     "agent_veille", "chef.py", "test_agent_veille.py", "ARCHITECTURE.md", "render.yaml",
                     "devops_variable", "Surveille des sites"):
             self.assertIn(mot, entree["demande"])
-        messages = [m["content"] for m in chef.history()]
+        messages = [m["content"] for m in chef.history(fil="dev")]
         self.assertIn("étape 2 sur 2", messages[-1])
         self.assertIn("modification fusionnée", messages[-2])   # le compte rendu de l'étape 1 est affiché avant
         suite = [r["ref"] for r in db.run("SELECT ref, depot FROM dev_requests") if r["depot"] == "agent-manager"][0]
@@ -282,7 +282,7 @@ class CreerAgentTest(unittest.TestCase):
         ref = self._creer()
         dev.report({"id": ref, "statut": "tests_rouges", "titre": "Agent veille"})
         self.assertEqual(self._lancements(), [])
-        dernier = chef.history()[-1]["content"]
+        dernier = chef.history(fil="dev")[-1]["content"]
         self.assertIn("n'est pas lancée", dernier)
         self.assertIn("installe l'agent agent-veille", dernier)
 
@@ -291,8 +291,8 @@ class CreerAgentTest(unittest.TestCase):
         self.sha = ""   # dernier commit introuvable
         dev.report({"id": ref, "statut": "fusionne"})
         self.assertEqual(self._lancements(), [])
-        self.assertIn("n'a pas pu être lancée", chef.history()[-1]["content"])
-        self.assertNotIn("ghp_secret", chef.history()[-1]["content"])
+        self.assertIn("n'a pas pu être lancée", chef.history(fil="dev")[-1]["content"])
+        self.assertNotIn("ghp_secret", chef.history(fil="dev")[-1]["content"])
 
     def test_une_demande_ordinaire_ne_declenche_aucune_installation(self):
         ref = dev.submit("agent-emploi", "Trie les offres par date de publication")

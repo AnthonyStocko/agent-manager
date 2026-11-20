@@ -1,5 +1,6 @@
 """L'agent chef : point d'entrée unique (chat), tableau de bord et initiatives du matin."""
 import base64
+import contextvars
 import datetime
 import json
 import re
@@ -8,6 +9,7 @@ import time
 from zoneinfo import ZoneInfo
 
 import agents
+import contexte
 import db
 import agent_devops as devops   # dépôt agent-devops-perso, installé par requirements.txt
 import dev
@@ -16,7 +18,21 @@ import llm
 import memory
 
 PARIS = ZoneInfo("Europe/Paris")
-HISTORY = 10
+HISTORY = contexte.RECENTS
+
+# Fils de discussion par sujet. Chacun a son historique, son résumé et ses confirmations en attente, et
+# donne la priorité aux souvenirs de son espace de mémoire (None : toute la mémoire).
+FILS = {"general": "Général", "emploi": "Emploi", "perso": "Perso", "mon_guide": "Mon guide",
+        "dev": "Développement"}
+FIL_ESPACE = {"general": None, "emploi": "emploi", "perso": "perso", "mon_guide": "mon_guide", "dev": "dev"}
+_fil = contextvars.ContextVar("fil", default="general")   # fil de la demande en cours
+
+
+def fil_valide(fil):
+    fil = str(fil or "general").strip()
+    if fil not in FILS:
+        raise ValueError("Fil de discussion inconnu.")
+    return fil
 _summary_cache = {"at": 0.0, "value": None}
 
 
@@ -66,14 +82,19 @@ def _offers_text(offers):
                      f"{o.get('location') or '?'} (score {o.get('score')})" for o in offers)
 
 
-def _save(role, content, agent=""):
-    db.run("INSERT INTO messages(role, content, agent, created_at) VALUES(?,?,?,?)",
-           (role, content, agent, db.now()))
+def _save(role, content, agent="", fil=None):
+    db.run("INSERT INTO messages(role, content, agent, created_at, fil) VALUES(?,?,?,?,?)",
+           (role, content, agent, db.now(), fil or _fil.get()))
 
 
-def history(limit=60):
-    rows = db.run("SELECT * FROM messages ORDER BY id DESC LIMIT ?", (limit,))
+def history(limit=60, fil=None):
+    rows = db.run("SELECT * FROM messages WHERE fil = ? ORDER BY id DESC LIMIT ?", (fil or _fil.get(), limit))
     return rows[::-1]
+
+
+def derniers_messages():
+    """Identifiant du dernier message de chaque fil (pour signaler les nouveautés dans la page)."""
+    return {r["fil"]: r["n"] for r in db.run("SELECT fil, MAX(id) AS n FROM messages GROUP BY fil")}
 
 
 # ---------- agent perso : demandes, questions en attente et confirmations ----------
@@ -102,13 +123,16 @@ def _pending(key):
         state = json.loads(db.kv_get(key) or "null")
     except ValueError:
         state = None
-    if state and time.time() - state.get("at", 0) < PENDING_MINUTES * 60:
+    # Une confirmation n'est valable que dans le fil où elle a été demandée
+    if state and time.time() - state.get("at", 0) < PENDING_MINUTES * 60 \
+            and state.get("fil", "general") == _fil.get():
         return state
     return None
 
 
 def _set_pending(key, value):
-    db.kv_set(key, json.dumps({**value, "at": time.time()}, ensure_ascii=False) if value else "null")
+    db.kv_set(key, json.dumps({**value, "at": time.time(), "fil": _fil.get()}, ensure_ascii=False)
+              if value else "null")
 
 
 def _perso_result(result):
@@ -298,7 +322,7 @@ def _dev_confirm(state, confirmed):
     except dev.DevError as e:
         return f"La demande n'a pas pu être lancée : {e}"
     return (f"**Demande lancée** (référence {ref}). L'agent développeur travaille dans GitHub Actions, en "
-            "général 5 à 20 minutes. Son compte rendu arrivera dans cette discussion ; l'avancement est "
+            "général 5 à 20 minutes. Son compte rendu arrivera dans le fil Développement ; l'avancement est "
             "dans l'onglet Développeur.")
 
 
@@ -333,7 +357,7 @@ def _creer_confirm(state, confirmed):
     return (f"**Création lancée — étape 1 sur 2** : dépôt public {dev.PROPRIETAIRE}/{state['cle']} créé, ajouté "
             f"à la liste des dépôts, et développement lancé (référence {ref}). L'agent développeur travaille dans "
             "GitHub Actions, en général 5 à 20 minutes. Quand son travail sera fusionné, je lancerai l'étape 2 : "
-            "l'installation de l'agent dans l'agent chef. Les comptes rendus arriveront dans cette discussion.")
+            "l'installation de l'agent dans l'agent chef. Les comptes rendus arriveront dans le fil Développement.")
 
 
 def _direct(message, shown, answer, agent):
@@ -342,7 +366,17 @@ def _direct(message, shown, answer, agent):
     return {"answer": answer, "agent": agent, "remembered": 0}
 
 
-def chat(message, file=None, model=None):
+def chat(message, file=None, model=None, fil="general"):
+    """Message de la personne dans un fil de discussion. Le fil vaut pour toute la demande : historique,
+    contexte, confirmations en attente et messages enregistrés."""
+    jeton = _fil.set(fil_valide(fil))
+    try:
+        return _chat(message, file, model)
+    finally:
+        _fil.reset(jeton)
+
+
+def _chat(message, file=None, model=None):
     message = str(message or "").strip()[:6000]
     file = files.decode(file)
     if not message and not file:
@@ -402,8 +436,9 @@ def chat(message, file=None, model=None):
                      + (_offers_text(s.get("top", [])) or "(aucune)"))
         except agents.AgentError as e:
             state = f"(agent emploi : {e})"
+    recent_user = " ".join(m["content"] for m in past if m["role"] == "user")[-1500:]
     plan = llm.ask_json(ROUTER.format(
-        memory=memory.as_text() or "(rien pour l'instant)",
+        memory=contexte.memoire(message + " " + recent_user, FIL_ESPACE[_fil.get()]) or "(rien pour l'instant)",
         agents="\n".join(f"- {a.key} ({a.name}) : {a.description} — "
                          f"{'disponible' if a.configured else 'NON CONFIGURÉ'}" for a in (emploi, perso, agents.Instagram())),
         emploi=state,
@@ -411,8 +446,7 @@ def chat(message, file=None, model=None):
         depots="\n".join(f"- {k} : {v}" for k, v in dev.depots().items()),
         question=question["question"] if question else "(aucune)",
         attachment=(f"{file['name']} ({'image' if files.is_image(file) else 'document'})" if file else "(aucune)"),
-        history="\n".join(f"{'Elle' if m['role'] == 'user' else 'Toi'} : {m['content'][:700]}"
-                          for m in past) or "(début de conversation)",
+        history=contexte.conversation(_fil.get(), HISTORY),
         message=message), model=model)
     if not isinstance(plan, dict):
         raise llm.LLMError("Réponse du modèle mal formée, réessaie.")
@@ -548,6 +582,7 @@ def chat(message, file=None, model=None):
     answer = answer or "Je n'ai pas de réponse à cette demande."
     _save("user", shown)
     _save("assistant", answer, agent_used)
+    contexte.resumer_plus_tard(_fil.get())
     facts = [str(x).strip() for x in (plan.get("a_retenir") or []) if str(x).strip()][:5]
     if facts:
         memory.add_event("chef", "conversation", "La personne a dit :\n" + "\n".join("- " + f for f in facts))
@@ -586,7 +621,7 @@ def _morning():
         lines.append(f"Mémoire : {learned} souvenir(s) mis à jour.")
     text = "\n\n".join(lines)
     db.kv_set("briefing", json.dumps({"date": today, "text": text}, ensure_ascii=False))
-    _save("assistant", f"Point du matin ({today})\n\n{text}", "chef")
+    _save("assistant", f"Point du matin ({today})\n\n{text}", "chef", fil="general")
 
 
 def start_morning(force=False):

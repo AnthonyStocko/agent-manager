@@ -282,7 +282,7 @@ def _suite_creation(ref, statut):
         return (f"**Création de « {libelle} »** : son dépôt est prêt, mais son installation dans l'agent chef "
                 f"n'a pas pu être lancée ({str(e).replace(_token(), '***')}). {relance}")
     return (f"**Création de « {libelle} » — étape 2 sur 2** : son dépôt est prêt, je lance son installation dans "
-            f"l'agent chef (référence {suite}). Le compte rendu arrivera ici ; l'agent sera utilisable dans cette "
+            f"l'agent chef (référence {suite}). Le compte rendu arrivera dans ce fil ; l'agent sera utilisable dans la "
             "discussion après le déploiement de l'agent chef.")
 
 
@@ -314,12 +314,13 @@ def report(body):
     text = (f"**Agent développeur — {noms[depot]}** : {LIBELLES[statut]}."
             + (f"\n\n**{titre}**" if titre else "") + (f"\n\n{resume}" if resume else "")
             + (f"\n\nPull request : {pr_url}" if pr_url else "") + (f"\nJournal : {run_url}" if run_url else ""))
-    db.run("INSERT INTO messages(role, content, agent, created_at) VALUES(?,?,?,?)",
-           ("assistant", text, "dev", db.now()))
+    # Les comptes rendus vont dans le fil Développement de la discussion, quel que soit le fil de la demande
+    db.run("INSERT INTO messages(role, content, agent, created_at, fil) VALUES(?,?,?,?,?)",
+           ("assistant", text, "dev", db.now(), "dev"))
     suite = _suite_creation(ref, statut)
     if suite:
-        db.run("INSERT INTO messages(role, content, agent, created_at) VALUES(?,?,?,?)",
-               ("assistant", suite, "dev", db.now()))
+        db.run("INSERT INTO messages(role, content, agent, created_at, fil) VALUES(?,?,?,?,?)",
+               ("assistant", suite, "dev", db.now(), "dev"))
     return {"ok": True}
 
 
