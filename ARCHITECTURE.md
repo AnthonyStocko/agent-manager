@@ -47,7 +47,7 @@ flowchart TD
     chef <-->|demandes et mémoire| emploi
     chef -->|lecture seule| insta
     chef -->|demande de modification| dev
-    dev -->|compte rendu| chef
+    dev -->|contexte du dépôt, puis compte rendu| chef
     chef -->|déploiements, variables et workflows après confirmation| devops
     devops -.->|workflow de déploiement en liste blanche| insta
 
@@ -109,8 +109,11 @@ L'agent chef lit tout et écrit partout, comme ta saisie manuelle. Un agent lit 
 (`GET /agent/memory?espace=…`, avec `&q=…` pour n'avoir que les souvenirs utiles à un texte). Ses événements ne peuvent créer, modifier ou supprimer que des souvenirs
 du commun et de son espace : le code refuse le reste, et le journal le note.
 
-Aujourd'hui, seul agent-emploi lit et alimente la mémoire ; les espaces perso, Mon guide et dev
-attendent que leurs agents y soient branchés.
+Branchés aujourd'hui : agent-emploi (il lit et alimente le commun et l'espace emploi) et agent-dev.
+Au début de chaque travail, agent-dev demande à l'agent chef l'historique du dépôt visé et les décisions
+techniques utiles (`GET /agent/dev/contexte`) ; ce contexte va seulement dans sa consigne, jamais sur
+GitHub, car son dépôt est public. Ses comptes rendus alimentent l'espace dev. Les espaces perso et
+Mon guide attendent que leurs agents y soient branchés.
 
 Les données de tiers (contacts, rendez-vous avec d'autres personnes, dépenses) restent chez agent-perso :
 elles n'ont pas de catégorie dans la mémoire commune. Rien de sensible n'y est retenu (santé, opinions,

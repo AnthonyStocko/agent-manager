@@ -54,10 +54,18 @@ L'agent chef le commande :
 - **onglet Développeur** : choix de l'agent, description de la modification, suivi des demandes
   (en cours, fusionnée, à relire, en échec) avec les liens vers la pull request et le journal ;
 - **discussion** : « dans l'agent emploi, trie les offres par date », puis « oui » pour lancer ;
-- le compte rendu de l'agent développeur arrive dans la discussion à la fin du travail.
+- le compte rendu de l'agent développeur arrive dans le fil Développement à la fin du travail.
   Il est envoyé par agent-dev ; si cet envoi n'arrive pas (agent chef endormi, accès refusé par
   l'hébergeur), l'agent chef va le lire lui-même sur GitHub à l'ouverture de la discussion ou de
   l'onglet Développeur.
+
+**Mémoire de projet.** Au début de chaque travail, agent-dev demande à l'agent chef ce qui a déjà été
+fait ou décidé sur le dépôt visé (`GET /agent/dev/contexte`) : ses 12 dernières demandes et leur
+résultat, puis les décisions techniques de la mémoire utiles à la demande. Seul l'espace « dev » de la
+mémoire est transmis ; le profil et les autres espaces restent ici. Ce contexte va uniquement dans la
+consigne de Claude Code, jamais sur GitHub : le dépôt agent-dev est public. En retour, chaque compte
+rendu est envoyé à la mémoire, qui en retient les décisions durables (un refus et sa raison, un choix
+d'architecture), pas le détail des modifications.
 
 ### Créer un nouvel agent
 

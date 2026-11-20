@@ -322,6 +322,9 @@ RÈGLES :
 - Récits : retiens les situations concrètes racontées en entretien (contexte, action, résultat).
 - N'invente rien. Ne retiens jamais : santé, opinions politiques ou religieuses, origine, vie
   intime, données bancaires, identifiants, mots de passe, ni détails sur des tiers nommés.
+- Décisions techniques (comptes rendus de l'agent développeur) : retiens la règle ou le choix durable
+  (« un dépôt par agent », « les secrets ne se règlent qu'à la main », un refus et sa raison), pas le
+  détail d'une modification. Une modification ordinaire, fusionnée sans difficulté, ne mérite rien.
 - Habitudes : seulement les siennes (rythme, horaires, façon de planifier), jamais ses contacts, ses
   rendez-vous avec d'autres personnes ni ses dépenses : ils restent chez l'agent perso.
 - importance : 1 (anecdotique) à 5 (essentiel).

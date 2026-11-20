@@ -124,6 +124,8 @@ def agent_api(method, path, query, body):
         return {"ok": True}
     if method == "POST" and path == "/agent/dev/rapport":
         return dev.report(body)
+    if method == "GET" and path == "/agent/dev/contexte":
+        return {"texte": dev.contexte_projet((query.get("depot") or [""])[0], (query.get("id") or [""])[0])}
     raise ApiError("Route inconnue.", 404)
 
 
