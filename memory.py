@@ -13,14 +13,55 @@ import threading
 import db
 import llm
 
+# La mémoire est découpée en espaces. Tous les agents lisent « commun » ; chacun lit en plus le sien.
+# Un événement envoyé par un agent ne peut écrire que dans « commun » et dans son espace (AGENT_ESPACE).
+# Les données de tiers (contacts, rendez-vous, dépenses) restent chez agent-perso : elles n'ont pas de
+# catégorie ici.
+ESPACES = {
+    "commun": "Commun à tous tes agents",
+    "emploi": "Recherche d'emploi",
+    "perso": "Assistant personnel",
+    "mon_guide": "Mon guide",
+    "dev": "Développement de tes agents",
+}
 CATEGORIES = {
     "profil": "Qui tu es : métier, situation, objectifs",
-    "gouts_offres": "Tes goûts en offres d'emploi",
+    "preferences": "Comment tu veux que tes agents travaillent",
     "style_ecriture": "Ton style d'écriture",
+    "gouts_offres": "Tes goûts en offres d'emploi",
     "recits": "Tes récits d'expérience réutilisables",
     "points_a_travailler": "Tes points à travailler en entretien",
-    "preferences": "Comment tu veux que tes agents travaillent",
+    "habitudes": "Tes habitudes d'organisation : rythme, horaires, façon de planifier",
+    "ligne_editoriale": "Ligne éditoriale de Mon guide : ton, sujets, ce que tu acceptes ou refuses",
+    "decisions_techniques": "Décisions techniques sur tes agents : architecture, choix, règles",
 }
+CATEGORIE_ESPACE = {
+    "profil": "commun", "preferences": "commun", "style_ecriture": "commun",
+    "gouts_offres": "emploi", "recits": "emploi", "points_a_travailler": "emploi",
+    "habitudes": "perso",
+    "ligne_editoriale": "mon_guide",
+    "decisions_techniques": "dev",
+}
+# Agent qui envoie l'événement -> espace où il a le droit d'écrire (en plus de « commun »).
+# L'agent chef (discussion) et la saisie manuelle écrivent partout ; un agent inconnu, dans « commun » seulement.
+AGENT_ESPACE = {"emploi": "emploi", "perso": "perso", "instagram": "mon_guide", "dev": "dev", "devops": "dev"}
+PARTOUT = ("chef", "manuel")
+
+
+def categories_de(espace=None):
+    """Catégories lues par un agent de cet espace : « commun » et les siennes. Sans espace : toutes."""
+    if not espace:
+        return list(CATEGORIES)
+    if espace not in ESPACES:
+        raise ValueError("Espace de mémoire inconnu : " + ", ".join(ESPACES) + ".")
+    return [c for c in CATEGORIES if CATEGORIE_ESPACE[c] in ("commun", espace)]
+
+
+def categories_ecrites_par(agent):
+    """Catégories qu'un événement de cet agent a le droit de créer, modifier ou supprimer."""
+    if agent in PARTOUT:
+        return list(CATEGORIES)
+    return categories_de(AGENT_ESPACE.get(agent)) if agent in AGENT_ESPACE else categories_de("commun")
 MAX_MEMORIES_IN_PROMPT = 150
 JOURNAL_DAYS = 30
 _processing = threading.Lock()
@@ -109,8 +150,8 @@ def _valid_until(value):
         return None
 
 
-def recall(categories=None, limit=60, include_expired=False):
-    cats = [c for c in (categories or CATEGORIES) if c in CATEGORIES]
+def recall(categories=None, limit=60, include_expired=False, espace=None):
+    cats = [c for c in (categories or categories_de(espace)) if c in CATEGORIES]
     if not cats:
         return []
     marks = ", ".join("?" * len(cats))
@@ -120,10 +161,10 @@ def recall(categories=None, limit=60, include_expired=False):
                   "ORDER BY importance DESC, updated_at DESC LIMIT ?", params)
 
 
-def as_text(categories=None, limit=60):
+def as_text(categories=None, limit=60, espace=None):
     """Bloc de texte à glisser dans le prompt d'un agent."""
     lines, current = [], None
-    for m in sorted(recall(categories, limit), key=lambda m: list(CATEGORIES).index(m["category"])):
+    for m in sorted(recall(categories, limit, espace=espace), key=lambda m: list(CATEGORIES).index(m["category"])):
         if m["category"] != current:
             current = m["category"]
             lines.append(f"{CATEGORIES[current]} :")
@@ -253,7 +294,7 @@ def pending_count():
 PROMPT = """Tu tiens la mémoire à long terme d'une personne, partagée entre ses agents IA (recherche
 d'emploi, assistant personnel, etc.). À partir des nouveaux événements, décide ce qui doit changer.
 
-CATÉGORIES :
+CATÉGORIES que tu peux utiliser pour ces événements (les autres appartiennent à d'autres agents) :
 {categories}
 
 MÉMOIRE ACTUELLE :
@@ -276,6 +317,8 @@ RÈGLES :
 - Récits : retiens les situations concrètes racontées en entretien (contexte, action, résultat).
 - N'invente rien. Ne retiens jamais : santé, opinions politiques ou religieuses, origine, vie
   intime, données bancaires, identifiants, mots de passe, ni détails sur des tiers nommés.
+- Habitudes : seulement les siennes (rythme, horaires, façon de planifier), jamais ses contacts, ses
+  rendez-vous avec d'autres personnes ni ses dépenses : ils restent chez l'agent perso.
 - importance : 1 (anecdotique) à 5 (essentiel).
 - Un fait temporaire (une période de disponibilité, un projet en cours) reçoit "valable_jusqu_au" :
   la date (AAAA-MM-JJ) après laquelle il ne sera plus utilisé. Aujourd'hui : {today}.
@@ -293,13 +336,17 @@ def process_pending():
     applied = 0
     try:
         while True:
-            events = db.run("SELECT * FROM events WHERE processed = 0 ORDER BY id LIMIT 8")
-            if not events:
+            # Un lot = les événements d'un seul agent, pour appliquer ses droits d'écriture
+            first = db.run("SELECT agent FROM events WHERE processed = 0 ORDER BY id LIMIT 1")
+            if not first:
                 break
-            existing = recall(limit=MAX_MEMORIES_IN_PROMPT)
+            agent = first[0]["agent"]
+            events = db.run("SELECT * FROM events WHERE processed = 0 AND agent = ? ORDER BY id LIMIT 8", (agent,))
+            allowed = categories_ecrites_par(agent)
+            existing = recall(allowed, limit=MAX_MEMORIES_IN_PROMPT)
             prompt = PROMPT.format(
                 today=_today(),
-                categories="\n".join(f"- {k} : {v}" for k, v in CATEGORIES.items()),
+                categories="\n".join(f"- {k} : {CATEGORIES[k]}" for k in allowed),
                 memories="\n".join(f"[{m['id']}] ({m['category']}, importance {m['importance']}) "
                                    f"{m['content']}" for m in existing) or "(vide)",
                 events="\n\n".join(f"--- Événement de l'agent « {e['agent']} », type « {e['kind']} », "
@@ -320,6 +367,10 @@ def process_pending():
             for op in ops if isinstance(ops, list) else []:
                 try:
                     kind = op.get("op")
+                    if kind == "add" and op.get("category") in CATEGORIES and op.get("category") not in allowed:
+                        _log("refus", None, source, event_ids, reason=(
+                            f"hors de son espace : l'agent « {agent} » ne peut pas écrire dans « {op.get('category')} »"))
+                        continue
                     if kind == "add":
                         add(op.get("category"), op.get("content"), source, op.get("importance"), event_ids,
                             op.get("valable_jusqu_au"))

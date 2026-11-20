@@ -175,6 +175,85 @@ class Traitement(Base):
         self.assertEqual(memory.recall()[0]["valid_until"], demain)
 
 
+class Espaces(Base):
+    def test_decoupage(self):
+        self.assertEqual(set(memory.CATEGORIE_ESPACE), set(memory.CATEGORIES))
+        self.assertEqual(set(memory.CATEGORIE_ESPACE.values()), set(memory.ESPACES))
+        self.assertEqual(memory.categories_de("emploi"), ["profil", "preferences", "style_ecriture", "gouts_offres",
+                                                          "recits", "points_a_travailler"])
+        self.assertEqual(memory.categories_de("mon_guide"), ["profil", "preferences", "style_ecriture", "ligne_editoriale"])
+        self.assertEqual(memory.categories_ecrites_par("instagram"), memory.categories_de("mon_guide"))
+        self.assertEqual(memory.categories_ecrites_par("devops"), memory.categories_de("dev"))
+        self.assertEqual(memory.categories_ecrites_par("chef"), list(memory.CATEGORIES))
+        self.assertEqual(memory.categories_ecrites_par("inconnu"), memory.categories_de("commun"))
+        with self.assertRaises(ValueError):
+            memory.categories_de("banque")
+
+    def test_lecture_par_espace(self):
+        memory.add("profil", "Chef de projet")
+        memory.add("gouts_offres", "Préfère Lyon")
+        memory.add("ligne_editoriale", "Ton chaleureux, pas de superlatifs")
+        self.assertEqual({m["content"] for m in memory.recall(espace="mon_guide")},
+                         {"Chef de projet", "Ton chaleureux, pas de superlatifs"})
+        texte = memory.as_text(espace="emploi")
+        self.assertIn("Préfère Lyon", texte)
+        self.assertNotIn("chaleureux", texte)
+        self.assertEqual(len(memory.recall()), 3)   # l'agent chef lit tout
+
+    def test_un_agent_n_ecrit_que_dans_le_commun_et_son_espace(self):
+        dev = memory.add("decisions_techniques", "Un dépôt par agent", "manuel")
+        with mock.patch.object(memory.threading, "Thread"):
+            memory.add_event("emploi", "decision_offre", "A écarté une offre à Paris")
+        ops = [
+            {"op": "add", "category": "gouts_offres", "content": "Écarte Paris", "importance": 3},
+            {"op": "add", "category": "profil", "content": "Cherche un poste de chef de projet", "importance": 4},
+            {"op": "add", "category": "ligne_editoriale", "content": "Hors sujet", "importance": 3},
+            {"op": "update", "id": dev, "content": "Modifié par l'agent emploi"},
+            {"op": "delete", "id": dev},
+        ]
+        with mock.patch.object(memory.llm, "ask_json", return_value=ops) as appel:
+            self.assertEqual(memory.process_pending(), 2)
+        prompt = appel.call_args[0][0]
+        self.assertIn("gouts_offres", prompt)
+        self.assertNotIn("ligne_editoriale :", prompt)
+        self.assertNotIn("Un dépôt par agent", prompt)   # ne voit pas les souvenirs des autres espaces
+        self.assertEqual(memory._get(dev)["content"], "Un dépôt par agent")
+        self.assertEqual({m["category"] for m in memory.recall()}, {"gouts_offres", "profil", "decisions_techniques"})
+        refus = [e for e in memory.journal() if e["op"] == "refus"]
+        self.assertEqual(len(refus), 1)
+        self.assertIn("hors de son espace", refus[0]["reason"])
+
+    def test_lots_par_agent(self):
+        with mock.patch.object(memory.threading, "Thread"):
+            memory.add_event("emploi", "decision_offre", "Offre 1")
+            memory.add_event("chef", "conversation", "Il veut des réponses courtes")
+            memory.add_event("emploi", "decision_offre", "Offre 2")
+        lots = []
+
+        def faux(prompt, **kw):
+            lots.append(prompt)
+            return []
+        with mock.patch.object(memory.llm, "ask_json", side_effect=faux):
+            memory.process_pending()
+        self.assertEqual(len(lots), 2)
+        self.assertIn("Offre 1", lots[0])
+        self.assertIn("Offre 2", lots[0])
+        self.assertNotIn("réponses courtes", lots[0])
+        self.assertIn("decisions_techniques", lots[1])   # l'agent chef peut écrire partout
+        self.assertEqual(memory.pending_count(), 0)
+
+    def test_route_des_agents(self):
+        memory.add("profil", "Chef de projet")
+        memory.add("ligne_editoriale", "Ton chaleureux")
+        texte = app.agent_api("GET", "/agent/memory", {"espace": ["emploi"]}, {})["text"]
+        self.assertIn("Chef de projet", texte)
+        self.assertNotIn("chaleureux", texte)
+        texte = app.agent_api("GET", "/agent/memory", {"categories": ["ligne_editoriale"]}, {})["text"]
+        self.assertEqual(texte.count("- "), 1)
+        with self.assertRaises(ValueError):
+            app.agent_api("GET", "/agent/memory", {"espace": ["banque"]}, {})
+
+
 class Api(Base):
     def test_routes(self):
         mid = app.api_post("/api/memories", {"category": "profil", "content": "Vit à Lyon", "importance": 4})["id"]
@@ -190,6 +269,7 @@ class Api(Base):
             app.api_post("/api/memories/999999/delete", {})
         liste = app.api_get("/api/memories", {})
         self.assertIn("today", liste)
+        self.assertEqual(set(liste["espaces"]), {"commun", "emploi", "perso", "mon_guide", "dev"})
         self.assertEqual(len(liste["items"]), 1)
 
 
