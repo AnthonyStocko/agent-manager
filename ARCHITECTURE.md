@@ -110,7 +110,8 @@ L'agent chef lit tout et écrit partout, comme ta saisie manuelle. Un agent lit 
 (`GET /agent/memory?espace=…`, avec `&q=…` pour n'avoir que les souvenirs utiles à un texte). Ses événements ne peuvent créer, modifier ou supprimer que des souvenirs
 du commun et de son espace : le code refuse le reste, et le journal le note.
 
-Branchés aujourd'hui : agent-emploi (il lit et alimente le commun et l'espace emploi) et agent-dev.
+Branchés aujourd'hui : agent-emploi (il lit et alimente le commun et l'espace emploi), agent-dev et
+agent-perso.
 Au début de chaque travail, agent-dev demande à l'agent chef l'historique du dépôt visé et les décisions
 techniques utiles (`GET /agent/dev/contexte`) ; ce contexte va seulement dans sa consigne, jamais sur
 GitHub, car son dépôt est public. Ses comptes rendus alimentent l'espace dev. agent-perso lit le
