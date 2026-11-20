@@ -1,0 +1,64 @@
+# Sauvegarde de la base de l'agent chef, chaque nuit : export JSON (sauvegarde.py), chiffré avec
+# SAUVEGARDE_PHRASE avant d'être déposé dans GitHub Actions, où il est gardé 30 jours. Le dépôt est
+# public : rien n'est jamais déposé en clair. Restauration : voir README, « Sauvegarde ».
+name: Sauvegarde de la mémoire
+
+on:
+  schedule:
+    - cron: "23 2 * * *"   # 3 h 23 ou 4 h 23 à Paris selon la saison
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sauvegarde
+  cancel-in-progress: false
+
+jobs:
+  sauvegarde:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Vérification des secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SAUVEGARDE_PHRASE: ${{ secrets.SAUVEGARDE_PHRASE }}
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$SAUVEGARDE_PHRASE" ]; then
+            echo "::error::Définis les secrets DATABASE_URL et SAUVEGARDE_PHRASE du dépôt (voir README, « Sauvegarde »)."
+            exit 1
+          fi
+          if [ ${#SAUVEGARDE_PHRASE} -lt 20 ]; then
+            echo "::error::SAUVEGARDE_PHRASE doit faire au moins 20 caractères."
+            exit 1
+          fi
+
+      - name: Export et chiffrement
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SAUVEGARDE_PHRASE: ${{ secrets.SAUVEGARDE_PHRASE }}
+          DATA_DIR: ${{ runner.temp }}
+        run: |
+          pip install --quiet "psycopg[binary]"
+          umask 077
+          clair="$RUNNER_TEMP/memoire.json"
+          python sauvegarde.py exporter "$clair"
+          mkdir -p sortie
+          printf '%s' "$SAUVEGARDE_PHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 -o "sortie/memoire-$(date -u +%Y-%m-%d).json.gpg" "$clair"
+          shred -u "$clair"
+          ls -l sortie
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memoire-${{ github.run_id }}
+          path: sortie/*.json.gpg
+          retention-days: 30
+          if-no-files-found: error
