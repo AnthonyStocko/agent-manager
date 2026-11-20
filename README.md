@@ -168,6 +168,23 @@ de l'agent chef est reconnu tout seul, et GitHub est lu avec `DEV_GITHUB_TOKEN`.
 
 Tout est visible et modifiable dans l'onglet Mémoire.
 
+### Garde-fous
+
+- **Données sensibles refusées par le code**, et pas seulement par la consigne du modèle : santé,
+  opinions politiques ou religieuses, origine, vie intime, données bancaires (IBAN, numéro de carte
+  vérifié par la clé de Luhn), identifiants (mots de passe, jetons). Le contrôle s'applique à toute
+  écriture, venue du modèle ou de la saisie manuelle (`memory.sensitive_reason`). Un souvenir refusé
+  est noté « Refusé » dans le journal, avec la raison seulement : son contenu n'est conservé nulle part.
+- **Journal des changements** (table `memory_log`) : chaque ajout, modification ou suppression est
+  enregistré avec l'avant, l'après, la source et les événements d'origine. Le bouton **Annuler** du
+  journal, dans l'onglet Mémoire, défait un changement : il supprime un ajout, rétablit l'ancienne
+  version, ou recrée un souvenir supprimé avec le même numéro. Le contenu est gardé 30 jours, puis
+  effacé : la trace du changement reste, mais il ne peut plus être annulé.
+- **Provenance** : chaque souvenir garde les événements d'où il vient et sa date de dernière
+  confirmation.
+- **Faits temporaires** : un souvenir peut avoir une date de fin de validité (« disponible en
+  décembre »). Une fois passée, il n'est plus transmis aux agents, mais reste visible, marqué expiré.
+
 ## Déploiement
 
 1. **Base Postgres** : crée une base gratuite (Neon ou Supabase) et copie son URL de connexion
@@ -220,7 +237,7 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 - `ARCHITECTURE.md` : vue d'ensemble de tous les agents
 - `CLAUDE.md` : règles non négociables, lues par l'agent développeur avant toute modification
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
-- `memory.py` : mémoire et extraction des souvenirs — `agents.py` : connexion aux agents
+- `memory.py` : mémoire, extraction des souvenirs, filtre des données sensibles, journal et annulation — `agents.py` : connexion aux agents
 - `dev.py` : commande de l'agent développeur (dépôt agent-dev)
 - vérification des déploiements Render : paquet `agent_devops`, installé depuis le dépôt agent-devops-perso
 - `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Google Gemini (`gemini-2.5-flash`) — `static/` : interface

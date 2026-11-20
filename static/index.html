@@ -54,7 +54,7 @@
 
 <section id="tab-memory" hidden>
   <div class="card" style="margin-bottom:16px">
-    <p class="hint">Ce que tes agents ont appris de toi. La mémoire s'enrichit seule ; tu peux corriger, supprimer ou ajouter un souvenir.</p>
+    <p class="hint">Ce que tes agents ont appris de toi. La mémoire s'enrichit seule ; tu peux corriger, supprimer ou ajouter un souvenir, et annuler tout changement depuis le journal en bas de page. Elle ne retient jamais : santé, opinions politiques ou religieuses, origine, vie intime, données bancaires, identifiants.</p>
     <div class="toolbar">
       <select id="mem-cat"></select>
       <input id="mem-text" placeholder="Ajouter un souvenir à la main" style="flex:1; min-width:200px">
@@ -63,6 +63,10 @@
     <p id="mem-pending" class="hint"></p>
   </div>
   <div id="mem-list"></div>
+  <div class="card"><h2>Journal des changements</h2>
+    <p class="hint" id="mem-journal-hint"></p>
+    <div id="mem-journal"></div>
+  </div>
 </section>
 <section id="tab-dev" hidden>
   <div class="card" style="margin-bottom:16px">

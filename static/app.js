@@ -193,7 +193,7 @@ async function loadMemory() {
     const items = r.items.filter((m) => m.category === k);
     return `<div class="card" style="margin-bottom:16px"><h2>${esc(label)} <small style="color:var(--mute)">(${items.length})</small></h2>
       ${items.map((m) => `<div class="mem" data-id="${m.id}"><div><span class="txt">${esc(m.content)}</span><br>
-        <small>importance ${m.importance}/5 · source : ${esc(m.source || "?")} · ${esc((m.updated_at || "").slice(0, 10))}</small></div>
+        <small>importance ${m.importance}/5 · source : ${esc(m.source || "?")}${m.event_ids ? ` (événements ${esc(m.event_ids)})` : ""} · ${m.confirmed_at ? "confirmé le " + esc(m.confirmed_at.slice(0, 10)) : esc((m.updated_at || "").slice(0, 10))}${m.valid_until ? ` · ${m.valid_until < r.today ? "<b>expiré</b> le" : "valable jusqu'au"} ${esc(m.valid_until)}` : ""}</small></div>
         <div><button data-act="edit">Modifier</button> <button data-act="del">Supprimer</button></div></div>`).join("")
         || '<p class="hint">Rien pour l\'instant.</p>'}</div>`;
   }).join("");
@@ -208,6 +208,25 @@ async function loadMemory() {
       }
       await loadMemory();
     } catch (er) { toast(er.message); }
+  });
+  await loadJournal();
+}
+
+const JOURNAL_OPS = { add: "Ajout", update: "Modification", delete: "Suppression", annulation: "Annulation", refus: "Refusé" };
+async function loadJournal() {
+  const j = await api("/api/memories/journal");
+  $("#mem-journal-hint").textContent = `100 derniers changements. Le contenu est gardé ${j.days} jours pour pouvoir annuler, puis effacé.`;
+  $("#mem-journal").innerHTML = j.items.map((e) => {
+    const texte = (e.after && e.after.content) || (e.before && e.before.content) || e.reason || "(contenu effacé)";
+    const avant = e.op === "update" && e.before ? `<br><small>avant : ${esc(e.before.content)}</small>` : "";
+    return `<div class="mem" data-id="${e.id}"><div><b>${JOURNAL_OPS[e.op] || esc(e.op)}</b> · <span>${esc(texte)}</span>${avant}<br>
+      <small>${esc((e.created_at || "").slice(0, 16).replace("T", " "))} · ${esc(e.source || "?")}${e.event_ids ? ` · événements ${esc(e.event_ids)}` : ""}${e.op === "refus" ? "" : e.reason ? " · " + esc(e.reason) : ""}${e.undone_at ? " · <b>annulé</b>" : ""}</small></div>
+      <div>${e.undoable ? '<button data-act="undo">Annuler</button>' : ""}</div></div>`;
+  }).join("") || '<p class="hint">Aucun changement pour l\'instant.</p>';
+  $("#mem-journal").querySelectorAll("button[data-act=undo]").forEach((b) => b.onclick = async () => {
+    if (!confirm("Annuler ce changement ?")) return;
+    try { await api(`/api/memories/journal/${b.closest(".mem").dataset.id}/undo`, {}); toast("Changement annulé."); await loadMemory(); }
+    catch (er) { toast(er.message); }
   });
 }
 $("#mem-add").onclick = (e) => busy(e.target, "Ajout…", async () => {
