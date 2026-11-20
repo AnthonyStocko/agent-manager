@@ -56,8 +56,10 @@ def api_get(path, query):
             "default_model": os.getenv("GEMINI_MODEL", llm.DEFAULT_GEMINI_MODEL),
         }
     if path == "/api/memories":
-        return {"categories": memory.CATEGORIES, "items": memory.recall(limit=500),
-                "pending_events": memory.pending_count()}
+        return {"categories": memory.CATEGORIES, "items": memory.recall(limit=500, include_expired=True),
+                "pending_events": memory.pending_count(), "today": memory._today()}
+    if path == "/api/memories/journal":
+        return {"items": memory.journal(100), "days": memory.JOURNAL_DAYS}
     if path == "/api/dev":
         return dev.listing()
     if path == "/api/devops/deploiements":
@@ -79,10 +81,14 @@ def api_post(path, body):
         return {"id": memory.add(body.get("category"), body.get("content"), "manuel", body.get("importance"))}
     if path == "/api/memories/process":
         return {"applied": memory.process_pending(), "pending_events": memory.pending_count()}
+    m = re.fullmatch(r"/api/memories/journal/(\d+)/undo", path)
+    if m:
+        return {"ok": memory.undo(int(m.group(1)))}
     m = re.fullmatch(r"/api/memories/(\d+)/(update|delete)", path)
     if m:
         if m.group(2) == "delete":
-            memory.delete(int(m.group(1)))
+            if not memory.delete(int(m.group(1))):
+                raise ApiError("Souvenir introuvable.", 404)
         elif not memory.update(int(m.group(1)), body.get("content"), body.get("category"), body.get("importance")):
             raise ApiError("Souvenir introuvable.", 404)
         return {"ok": True}

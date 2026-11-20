@@ -25,6 +25,11 @@ SCHEMA = [
     f"""CREATE TABLE IF NOT EXISTS messages (
         id {ID}, role TEXT, content TEXT, agent TEXT DEFAULT '', created_at TEXT)""",
     "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)",
+    # Journal des changements de la mémoire : chaque création, modification, suppression ou refus, avec
+    # l'avant et l'après (JSON), pour pouvoir annuler. Contenus effacés au bout de 30 jours (memory.py).
+    f"""CREATE TABLE IF NOT EXISTS memory_log (
+        id {ID}, memory_id INTEGER, op TEXT, source TEXT DEFAULT '', event_ids TEXT DEFAULT '',
+        before_json TEXT, after_json TEXT, reason TEXT DEFAULT '', created_at TEXT, undone_at TEXT)""",
     """CREATE TABLE IF NOT EXISTS dev_requests (
         ref TEXT PRIMARY KEY, depot TEXT, demande TEXT, statut TEXT, titre TEXT DEFAULT '',
         resume TEXT DEFAULT '', pr_url TEXT DEFAULT '', run_url TEXT DEFAULT '',
@@ -57,10 +62,28 @@ def run(sql, params=()):
             con.close()
 
 
+# Colonnes ajoutées après la création des tables : ajoutées au démarrage si elles manquent.
+COLUMNS = [
+    ("memories", "event_ids", "TEXT DEFAULT ''"),    # événements d'où vient le souvenir (ids, séparés par des virgules)
+    ("memories", "confirmed_at", "TEXT"),            # dernière fois qu'un événement l'a confirmé ou précisé
+    ("memories", "valid_until", "TEXT"),             # date (AAAA-MM-JJ) après laquelle il n'est plus utilisé
+]
+
+
+def _columns(table):
+    if PG:
+        return {r["column_name"] for r in run(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = ?", (table,))}
+    return {r["name"] for r in run(f"PRAGMA table_info({table})")}
+
+
 def init():
     os.makedirs(DATA_DIR, exist_ok=True)
     for statement in SCHEMA:
         run(statement)
+    for table, column, decl in COLUMNS:
+        if column not in _columns(table):
+            run(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 def kv_get(key, default=""):
