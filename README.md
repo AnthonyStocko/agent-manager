@@ -185,6 +185,33 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 - **Faits temporaires** : un souvenir peut avoir une date de fin de validité (« disponible en
   décembre »). Une fois passée, il n'est plus transmis aux agents, mais reste visible, marqué expiré.
 
+### Sauvegarde
+
+Chaque nuit, le workflow **Sauvegarde de la mémoire** (`.github/workflows/sauvegarde.yml`) exporte la
+base (souvenirs, journal, événements, discussion, réglages, demandes de développement) avec
+`sauvegarde.py`. Il **chiffre** l'export avant de le déposer dans GitHub Actions, où il est gardé
+30 jours. Le dépôt est public : rien n'y est jamais déposé en clair.
+
+À régler une fois, dans le dépôt GitHub : Settings > Secrets and variables > Actions > New repository
+secret.
+
+| Secret | Valeur |
+|---|---|
+| `DATABASE_URL` | la même adresse que la variable `DATABASE_URL` du service sur Render (base Neon) |
+| `SAUVEGARDE_PHRASE` | une phrase de passe d'au moins 20 caractères, que tu gardes aussi ailleurs (gestionnaire de mots de passe) : **sans elle, les sauvegardes sont illisibles** |
+
+Pour vérifier tout de suite : onglet Actions > Sauvegarde de la mémoire > Run workflow.
+
+Pour restaurer, sur ton ordinateur :
+
+1. Télécharge l'archive d'une sauvegarde (onglet Actions, run choisi, section « Artifacts ») et
+   décompresse-la.
+2. Déchiffre-la : `gpg -d memoire-AAAA-MM-JJ.json.gpg > memoire.json` (gpg demande la phrase).
+3. Restaure, avec `DATABASE_URL` pointant vers la base visée :
+   `python sauvegarde.py restaurer memoire.json`. Si la base contient déjà des souvenirs, la commande
+   refuse ; ajoute `--remplacer` pour l'écraser.
+4. Supprime `memoire.json`, qui est en clair.
+
 ## Déploiement
 
 1. **Base Postgres** : crée une base gratuite (Neon ou Supabase) et copie son URL de connexion
@@ -237,7 +264,8 @@ Tout est visible et modifiable dans l'onglet Mémoire.
 - `ARCHITECTURE.md` : vue d'ensemble de tous les agents
 - `CLAUDE.md` : règles non négociables, lues par l'agent développeur avant toute modification
 - `app.py` : serveur, connexion, routes — `chef.py` : discussion, tableau de bord, point du matin
-- `memory.py` : mémoire, extraction des souvenirs, filtre des données sensibles, journal et annulation — `agents.py` : connexion aux agents
+- `memory.py` : mémoire, extraction des souvenirs, filtre des données sensibles, journal et annulation
+- `sauvegarde.py` : export et restauration de la base (sauvegarde de chaque nuit) — `agents.py` : connexion aux agents
 - `dev.py` : commande de l'agent développeur (dépôt agent-dev)
 - vérification des déploiements Render : paquet `agent_devops`, installé depuis le dépôt agent-devops-perso
 - `files.py` : pièces jointes — `db.py` : Postgres ou SQLite — `llm.py` : appel à Google Gemini (`gemini-2.5-flash`) — `static/` : interface
