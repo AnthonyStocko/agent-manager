@@ -28,6 +28,7 @@ except ImportError:
 import agents
 import chef
 import contexte
+import curateur
 import db
 import agent_devops as devops   # dépôt agent-devops-perso, installé par requirements.txt
 import dev
@@ -64,6 +65,8 @@ def api_get(path, query):
                 "pending_events": memory.pending_count(), "today": memory._today()}
     if path == "/api/memories/journal":
         return {"items": memory.journal(100), "days": memory.JOURNAL_DAYS}
+    if path == "/api/metrics":
+        return curateur.rapport(max(1, min(90, int((query.get("jours") or ["7"])[0]))))
     if path == "/api/dev":
         return dev.listing()
     if path == "/api/devops/deploiements":
@@ -317,6 +320,8 @@ class Handler(BaseHTTPRequestHandler):
             if not os.getenv("APP_PASSWORD"):
                 return self._send(303, b"", "text/plain", [("Location", "/")])
             return self._send(200, login_page(), "text/html; charset=utf-8")
+        if path == "/metrics":   # même contenu que /api/metrics, derrière la même session
+            return self._api(api_get, "/api/metrics", query)
         if path.startswith("/api/"):
             return self._api(api_get, path, query)
         name = "index.html" if path == "/" else path.lstrip("/")
@@ -352,6 +357,7 @@ if __name__ == "__main__":
     port = int(sys.argv[1] if len(sys.argv) > 1 else os.getenv("PORT") or 8770)
     host = os.getenv("HOST") or ("0.0.0.0" if os.getenv("RENDER") else "127.0.0.1")
     db.init()
+    llm.activer_metriques()
     print(f"Agent chef prêt : http://{host}:{port}  (base : {'Postgres' if db.PG else 'SQLite locale'})", flush=True)
     try:
         ThreadingHTTPServer((host, port), Handler).serve_forever()

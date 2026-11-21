@@ -67,3 +67,5 @@ h2.espace { margin:24px 0 8px; font-size:15px; text-transform:uppercase; letter-
 .fils button { padding:6px 12px; border-radius:999px; font-size:14px; }
 .fils button.actif { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
 .fils .nouveau { color:var(--bad); font-weight:700; }
+#metrics table { border-collapse: collapse; width: 100%; font-size: 14px; }
+#metrics th, #metrics td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e2e5ea; }

@@ -216,6 +216,15 @@ def delete(mid, source="manuel", event_ids=""):
     return True
 
 
+def marquer_utilises(ids):
+    """Note que ces souvenirs viennent d'être transmis à un modèle (last_accessed, access_count). Ne touche
+    ni au contenu ni à la date de modification : pas d'entrée au journal."""
+    ids = sorted({int(i) for i in ids or []})
+    if ids:
+        db.run(f"UPDATE memories SET last_accessed = ?, access_count = COALESCE(access_count, 0) + 1 "
+               f"WHERE id IN ({', '.join('?' * len(ids))})", (db.now(), *ids))
+
+
 def journal(limit=100):
     """Derniers changements, du plus récent au plus ancien. Efface d'abord les contenus trop anciens."""
     purge_journal()

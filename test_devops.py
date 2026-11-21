@@ -19,6 +19,7 @@ from agent_devops.taches import variables  # noqa: E402
 
 import app  # noqa: E402
 import chef  # noqa: E402
+import curateur  # noqa: E402
 import db  # noqa: E402
 
 SHA_A, SHA_B = "a" * 40, "b" * 40
@@ -27,6 +28,17 @@ SHA_A, SHA_B = "a" * 40, "b" * 40
 def deploy(sha, status):
     return {"deploy": {"commit": {"id": sha, "message": "Correctif\n\ndétail"}, "status": status,
                        "finishedAt": "2026-11-13T10:00:00Z"}}
+
+
+def setUpModule():
+    # La distillation de fond (curateur) appellerait un vrai modèle : elle est coupée dans ces tests.
+    global _sans_distillation
+    _sans_distillation = mock.patch.object(curateur, "distiller_plus_tard", lambda fil: None)
+    _sans_distillation.start()
+
+
+def tearDownModule():
+    _sans_distillation.stop()
 
 
 class DevopsTest(unittest.TestCase):

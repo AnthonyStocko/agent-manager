@@ -17,8 +17,20 @@ os.environ.pop("DATABASE_URL", None)
 
 import app  # noqa: E402
 import chef  # noqa: E402
+import curateur  # noqa: E402
 import db  # noqa: E402
 import dev  # noqa: E402
+
+
+def setUpModule():
+    # La distillation de fond (curateur) appellerait un vrai modèle : elle est coupée dans ces tests.
+    global _sans_distillation
+    _sans_distillation = mock.patch.object(curateur, "distiller_plus_tard", lambda fil: None)
+    _sans_distillation.start()
+
+
+def tearDownModule():
+    _sans_distillation.stop()
 
 
 class DevTest(unittest.TestCase):
