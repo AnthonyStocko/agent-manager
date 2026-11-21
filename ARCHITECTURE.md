@@ -4,7 +4,7 @@ Qui fait quoi, qui appelle qui, et où s'arrête chaque agent. Ce document fait 
 README se contredisent. La fiche de cadrage détaillée de chaque agent est dans son propre dépôt
 (`README.md`, et `CLAUDE.md` ou `PRINCIPES.md` pour ses règles non négociables).
 
-Dernière mise à jour : 16 novembre 2026.
+Dernière mise à jour : 21 novembre 2026.
 
 ## Les agents
 
@@ -74,6 +74,27 @@ l'agent chef l'installe comme dépendance et l'exécute dans son propre processu
 Il sera hébergé à part quand un NAS sera disponible. « Crée un agent », dans la discussion de l'agent
 chef, applique cette règle : création du dépôt (public), développement, puis installation dans l'agent
 chef (voir le README, « Créer un nouvel agent »).
+
+### Le curateur : économiser le contexte et entretenir la mémoire
+
+`curateur.py` n'est pas un agent à part, ni un nouvel appelant : c'est un module de l'agent chef, qui ne
+parle à aucun autre agent et n'ajoute aucune écriture hors de la base de l'agent chef.
+
+- **Avant l'appel au modèle** (déterministe, sans modèle) : il choisit les souvenirs utiles à la demande
+  (mots-clés, espace évoqué), retire ce que le prompt ou la conversation disent déjà, et tronque
+  l'historique au budget de jetons de l'agent (`agents.BUDGETS_TOKENS`, réglable par `BUDGET_TOKENS_<AGENT>`).
+  Le socle (préférences, importance 5, priorité) n'est jamais écarté ; la dernière demande et les consignes
+  durables (« toujours », « jamais ») sont toujours gardées. Les espaces de mémoire ne changent pas : il ne lit
+  que ce que l'agent chef lisait déjà.
+- **Après la réponse, ou au point du matin** : il distille les anciens échanges en faits atomiques avec un
+  modèle économique (`llm.MODELE_ECONOMIQUE`) et les écrit par `memory.add`, donc avec le même filtre des
+  données sensibles et le même journal. Il purge ensuite les messages bruts déjà résumés et distillés, au-delà
+  des 60 derniers. Le point du matin et la sauvegarde nocturne (`sauvegarde.py`, après l'export) lancent aussi
+  l'hygiène, sans modèle : fusion des doublons (suppression journalisée, annulable) et archivage des souvenirs
+  peu importants inutilisés depuis 180 jours (date de fin de validité : rien n'est supprimé).
+- **Métriques** : `llm.py` enregistre, pour chaque appel et sans le ralentir, agent, modèle, jetons, taille du
+  contexte et latence (table `llm_metrics`, 30 jours, aucun contenu de prompt). Lecture : `/metrics` et
+  `/api/metrics`, derrière la session comme les autres pages, et encart du tableau de bord.
 
 ### Deux routines du matin, chacune sur son domaine
 

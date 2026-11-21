@@ -7,12 +7,18 @@ Utilise l'API v1beta pour assurer la compatibilité avec le mode JSON.
 Secours (optionnel) : Claude Code en mode non interactif (`claude -p`) si GEMINI_API_KEY n'est pas
 définie et qu'une session ou le jeton CLAUDE_CODE_OAUTH_TOKEN est présent.
 """
+import contextlib
+import contextvars
 import json
+import math
 import os
+import queue
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 
 try:
     from dotenv import load_dotenv
@@ -29,6 +35,10 @@ AVAILABLE_MODELS = [
     {"id": "claude", "name": "Claude Code (CLI local)", "provider": "claude"},
 ]
 
+# Modèle rapide et économique, réservé aux tâches de fond (distillation de la mémoire, curateur.py).
+# Sans clé Gemini, ces tâches utilisent le modèle par défaut (secours Claude Code).
+MODELE_ECONOMIQUE = os.getenv("GEMINI_MODEL_ECONOMIQUE", "gemini-2.5-flash-lite")
+
 CLI_TIMEOUT_SECONDS = int(os.getenv("CLI_TIMEOUT_SECONDS", "300"))
 CLI_ENV_ALLOWLIST = [
     "PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP",
@@ -43,6 +53,98 @@ _gemini_cached_key = None
 
 class LLMError(Exception):
     pass
+
+
+# ---------- métriques : une ligne par appel, écrite hors du chemin de la réponse ----------
+# Désactivées tant qu'on ne les active pas (activer_metriques, appelée au démarrage de l'appli) : les
+# outils et les tests qui importent ce module n'écrivent rien dans la base.
+_metriques = {"actives": False}
+_file = queue.Queue(maxsize=1000)
+_travailleur = {"thread": None}
+_travailleur_lock = threading.Lock()
+_suivi_courant = contextvars.ContextVar("suivi_llm", default=None)
+_usage = threading.local()   # jetons rapportés par le fournisseur pour l'appel en cours
+
+
+def activer_metriques(actives=True):
+    _metriques["actives"] = bool(actives)
+
+
+def estimer_tokens(texte):
+    """Estimation sans modèle : environ 4 caractères par jeton."""
+    return math.ceil(len(str(texte or "")) / 4)
+
+
+@contextlib.contextmanager
+def suivi(agent, contexte_chars=None, brut_chars=None):
+    """Étiquette les appels du bloc : agent, taille du contexte injecté, et taille qu'il aurait eue sans
+    optimisation (pour le ratio de réduction)."""
+    jeton = _suivi_courant.set({"agent": agent, "contexte": contexte_chars, "brut": brut_chars})
+    try:
+        yield
+    finally:
+        _suivi_courant.reset(jeton)
+
+
+def _ecrire_metrique(m):
+    import db
+    db.run("INSERT INTO llm_metrics(agent_name, model, prompt_tokens, completion_tokens, context_size_chars, "
+           "context_raw_chars, latency_ms, timestamp) VALUES(?,?,?,?,?,?,?,?)",
+           (m["agent_name"], m["model"], m["prompt_tokens"], m["completion_tokens"], m["context_size_chars"],
+            m["context_raw_chars"], m["latency_ms"], m["timestamp"]))
+
+
+def _boucle_ecriture():
+    while True:
+        m = _file.get()
+        try:
+            _ecrire_metrique(m)
+        except Exception as e:   # une métrique perdue ne doit jamais gêner un appel
+            print(f"Métrique non enregistrée ({e!r})", flush=True)
+        finally:
+            _file.task_done()
+
+
+def enregistrer_metrique(agent_name, model, prompt_tokens, completion_tokens, context_size_chars,
+                         latency_ms, context_raw_chars=None):
+    """Met la métrique en file ; un thread l'écrit dans la base. Ne bloque jamais : file pleine, elle est perdue."""
+    if not _metriques["actives"]:
+        return False
+    import db
+    m = {"agent_name": str(agent_name or "inconnu")[:40], "model": str(model or "")[:60],
+         "prompt_tokens": int(prompt_tokens or 0), "completion_tokens": int(completion_tokens or 0),
+         "context_size_chars": int(context_size_chars or 0),
+         "context_raw_chars": int(context_raw_chars if context_raw_chars is not None else context_size_chars or 0),
+         "latency_ms": int(latency_ms or 0), "timestamp": db.now()}
+    with _travailleur_lock:
+        if _travailleur["thread"] is None:
+            _travailleur["thread"] = threading.Thread(target=_boucle_ecriture, daemon=True)
+            _travailleur["thread"].start()
+    try:
+        _file.put_nowait(m)
+    except queue.Full:
+        return False
+    return True
+
+
+def attendre_metriques():
+    """Attend que la file soit écrite (tests, arrêt propre)."""
+    _file.join()
+
+
+def _mesurer(prompt, model, appel):
+    """Exécute l'appel au modèle et enregistre ses métriques. L'appel réussi seulement."""
+    _usage.valeur = None
+    debut = time.monotonic()
+    texte = appel()
+    if _metriques["actives"]:
+        ms = int((time.monotonic() - debut) * 1000)
+        entree, sortie = getattr(_usage, "valeur", None) or (estimer_tokens(prompt), estimer_tokens(texte))
+        s = _suivi_courant.get() or {}
+        taille = s.get("contexte") if s.get("contexte") is not None else len(prompt)
+        enregistrer_metrique(s.get("agent") or "inconnu", model or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+                             entree, sortie, taille, ms, s.get("brut"))
+    return texte
 
 
 def is_gemini_configured():
@@ -90,6 +192,10 @@ def ask_gemini(prompt, model=None, timeout=None, json_mode=False):
     except Exception as e:
         raise LLMError(f"Erreur API Gemini ({target_model}) : {e}")
 
+    meta = getattr(response, "usage_metadata", None)
+    entree, sortie = getattr(meta, "prompt_token_count", None), getattr(meta, "candidates_token_count", None)
+    if isinstance(entree, int) and isinstance(sortie, int):
+        _usage.valeur = (entree, sortie)
     text = response.text or ""
     return text.strip()
 
@@ -132,6 +238,10 @@ def ask_claude(prompt, timeout=None):
         data = {"is_error": True, "result": out or (proc.stderr or "").strip()}
     if not isinstance(data, dict):
         data = {"is_error": True, "result": out}
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    if isinstance(usage.get("input_tokens"), int) and isinstance(usage.get("output_tokens"), int):
+        _usage.valeur = (usage["input_tokens"] + int(usage.get("cache_read_input_tokens") or 0)
+                         + int(usage.get("cache_creation_input_tokens") or 0), usage["output_tokens"])
     message = " ".join(str(data.get("result") or "").split())
     if data.get("is_error") or proc.returncode != 0:
         print(f"Erreur Claude Code (code {proc.returncode}) : {message[-500:]!r}", flush=True)
@@ -143,7 +253,11 @@ def ask_claude(prompt, timeout=None):
 
 def ask(prompt, model=None, timeout=None):
     """Envoie un prompt au modèle (spécifié ou par défaut)."""
-    if model == "claude" or (not model and not is_gemini_configured() and (os.getenv("CLAUDE_CODE_OAUTH_TOKEN") or shutil.which("claude"))):
+    return _mesurer(prompt, model, lambda: _ask(prompt, model, timeout))
+
+
+def _ask(prompt, model, timeout):
+    if model == "claude" or (not model and not is_gemini_configured() and shutil.which("claude")):
         return ask_claude(prompt, timeout=timeout)
     if is_gemini_configured() or model:
         return ask_gemini(prompt, model=model, timeout=timeout, json_mode=False)
@@ -153,7 +267,16 @@ def ask(prompt, model=None, timeout=None):
 
 def ask_json(prompt, model=None, timeout=None):
     """Demande une réponse JSON et l'extrait même si elle est entourée de texte."""
-    if model == "claude" or (not model and not is_gemini_configured() and (os.getenv("CLAUDE_CODE_OAUTH_TOKEN") or shutil.which("claude"))):
+    return _mesurer(prompt, model, lambda: _ask_json_texte(prompt, model, timeout))
+
+
+def ask_json_economique(prompt, timeout=None):
+    """Comme ask_json, avec le modèle rapide et économique (tâches de fond, jamais la réponse à la personne)."""
+    return ask_json(prompt, model=MODELE_ECONOMIQUE if is_gemini_configured() else None, timeout=timeout)
+
+
+def _ask_json_texte(prompt, model, timeout):
+    if model == "claude" or (not model and not is_gemini_configured() and shutil.which("claude")):
         text = ask_claude(prompt + "\n\nRéponds uniquement avec du JSON valide, sans texte autour.", timeout)
     elif is_gemini_configured() or model:
         text = ask_gemini(prompt + "\n\nRéponds uniquement avec du JSON valide, sans texte autour.",

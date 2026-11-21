@@ -220,6 +220,24 @@ manuelle écrivent partout. Le détail est dans [ARCHITECTURE.md](ARCHITECTURE.m
 - **Faits temporaires** : un souvenir peut avoir une date de fin de validité (« disponible en
   décembre »). Une fois passée, il n'est plus transmis aux agents, mais reste visible, marqué expiré.
 
+### Curateur : économie de contexte et entretien de la mémoire
+
+`curateur.py` réduit ce que l'agent chef envoie au modèle et entretient la mémoire (voir
+[ARCHITECTURE.md](ARCHITECTURE.md)).
+
+- **Avant chaque réponse** : seuls les souvenirs utiles à ta demande sont transmis, sans doublon avec la
+  conversation, et l'historique est tronqué au budget de jetons de l'agent (ta dernière demande et tes
+  consignes « toujours / jamais » sont gardées). Aucun appel supplémentaire au modèle.
+- **Après la réponse et au point du matin** : les anciens échanges deviennent des faits courts dans la
+  mémoire (modèle économique `GEMINI_MODEL_ECONOMIQUE`, `gemini-2.5-flash-lite` par défaut), les doublons
+  sont fusionnés, les souvenirs peu importants et inutilisés depuis 180 jours sont archivés (marqués expirés,
+  annulables depuis le journal). La sauvegarde nocturne fait la même hygiène après l'export.
+- **Suivi** : l'encart « Consommation du modèle » du tableau de bord (et `/metrics`) montre, par agent, les
+  jetons, la taille du contexte, la latence et la réduction obtenue.
+- **Réglages (facultatifs)** : `BUDGET_TOKENS_CHEF` (4000 par défaut), `BUDGET_TOKENS_EMPLOI`,
+  `BUDGET_TOKENS_PERSO`, `BUDGET_TOKENS_INSTAGRAM`, `GEMINI_MODEL_ECONOMIQUE`. Aujourd'hui, seul le budget
+  de l'agent chef s'applique : les autres agents sont des services à part qui font leurs propres appels.
+
 ### Sauvegarde
 
 Chaque nuit, le workflow **Sauvegarde de la mémoire** (`.github/workflows/sauvegarde.yml`) exporte la

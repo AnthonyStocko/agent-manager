@@ -7,6 +7,11 @@ Export en JSON, indépendant de la version de Postgres. Utilise la même base qu
     python sauvegarde.py restaurer memoire.json             # refuse si la base contient déjà des souvenirs
     python sauvegarde.py restaurer memoire.json --remplacer # vide d'abord les tables sauvegardées
 
+Après l'export, `exporter` entretient la mémoire (curateur.nettoyer_memoire) : doublons fusionnés, souvenirs
+peu importants et inutilisés depuis longtemps archivés (date de fin de validité, annulable depuis le
+journal). La sauvegarde est écrite avant, et une erreur d'entretien ne la fait jamais échouer.
+`--sans-entretien` le saute.
+
 La sauvegarde de chaque nuit (.github/workflows/sauvegarde.yml) chiffre ce fichier avant de le déposer
 dans GitHub Actions : le dépôt est public. Voir README, « Sauvegarde ».
 """
@@ -52,6 +57,16 @@ def restaurer(sauvegarde, remplacer=False):
     return compte
 
 
+def entretenir():
+    """Hygiène de la mémoire après l'export : sans modèle, et sans jamais faire échouer la sauvegarde."""
+    try:
+        import curateur
+        bilan = curateur.nettoyer_memoire()
+        print("Entretien de la mémoire : " + ", ".join(f"{k} {n}" for k, n in bilan.items()))
+    except Exception as e:
+        print(f"Entretien de la mémoire ignoré ({e!r})")
+
+
 def main(args):
     if len(args) < 2 or args[0] not in ("exporter", "restaurer"):
         print(__doc__)
@@ -61,6 +76,8 @@ def main(args):
         with open(args[1], "w", encoding="utf-8") as f:
             json.dump(donnees, f, ensure_ascii=False)
         print("Sauvegarde : " + ", ".join(f"{t} {len(l)}" for t, l in donnees["tables"].items()))
+        if "--sans-entretien" not in args:
+            entretenir()
         return 0
     with open(args[1], encoding="utf-8") as f:
         compte = restaurer(json.load(f), "--remplacer" in args)

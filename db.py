@@ -34,6 +34,11 @@ SCHEMA = [
         ref TEXT PRIMARY KEY, depot TEXT, demande TEXT, statut TEXT, titre TEXT DEFAULT '',
         resume TEXT DEFAULT '', pr_url TEXT DEFAULT '', run_url TEXT DEFAULT '',
         created_at TEXT, updated_at TEXT)""",
+    # Métriques des appels aux modèles (curateur.py) : une ligne par appel, sans aucun contenu de prompt.
+    f"""CREATE TABLE IF NOT EXISTS llm_metrics (
+        id {ID}, agent_name TEXT, model TEXT, prompt_tokens INTEGER DEFAULT 0,
+        completion_tokens INTEGER DEFAULT 0, context_size_chars INTEGER DEFAULT 0,
+        context_raw_chars INTEGER DEFAULT 0, latency_ms INTEGER DEFAULT 0, timestamp TEXT)""",
 ]
 
 
@@ -67,6 +72,9 @@ COLUMNS = [
     ("memories", "event_ids", "TEXT DEFAULT ''"),    # événements d'où vient le souvenir (ids, séparés par des virgules)
     ("memories", "confirmed_at", "TEXT"),            # dernière fois qu'un événement l'a confirmé ou précisé
     ("memories", "valid_until", "TEXT"),             # date (AAAA-MM-JJ) après laquelle il n'est plus utilisé
+    ("memories", "last_accessed", "TEXT"),           # dernière fois qu'il a été transmis à un modèle
+    ("memories", "access_count", "INTEGER DEFAULT 0"),  # nombre de fois où il a été transmis
+    ("memories", "priority", "INTEGER DEFAULT 0"),   # 0 normal ; 1 à garder (jamais fusionné ni archivé)
     ("messages", "fil", "TEXT DEFAULT 'general'"),   # fil de discussion (chef.FILS)
 ]
 

@@ -192,6 +192,19 @@ async function loadBoard() {
   }).join("") + `<div class="card"><h2>Mémoire commune</h2><div class="stats">
       <div><b class="big">${d.memory_count}</b><span>souvenirs</span></div>
       <div><b class="big">${d.pending_events}</b><span>événements à traiter</span></div></div></div>`;
+  loadMetrics();
+}
+async function loadMetrics() {
+  const box = $("#metrics");
+  try {
+    const m = await api("/api/metrics");
+    if (!m.agents.length) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = `<h2>Consommation du modèle (${esc(m.jours)} derniers jours)</h2>
+      <p class="hint">Contexte transmis réduit de ${Math.round(m.ratio_reduction * 100)} % par le curateur.</p>
+      <table><tr><th>Agent</th><th>Appels</th><th>Jetons entrée</th><th>Jetons sortie</th><th>Contexte moyen (car.)</th><th>Réduction</th><th>Latence moy.</th></tr>
+      ${m.agents.map((a) => `<tr><td>${esc(a.agent)}</td><td>${esc(a.appels)}</td><td>${esc(a.tokens_entree)}</td><td>${esc(a.tokens_sortie)}</td><td>${esc(a.contexte_moyen_chars)}</td><td>${Math.round(a.ratio_reduction * 100)} %</td><td>${esc(a.latence_moyenne_ms)} ms</td></tr>`).join("")}</table>`;
+  } catch { box.hidden = true; }
 }
 $("#board-refresh").onclick = (e) => busy(e.target, "Actualisation…", loadBoard);
 $("#board-morning").onclick = (e) => busy(e.target, "Lancement…", async () => {

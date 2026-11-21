@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import agents
 import contexte
+import curateur
 import db
 import agent_devops as devops   # dépôt agent-devops-perso, installé par requirements.txt
 import dev
@@ -436,18 +437,21 @@ def _chat(message, file=None, model=None):
                      + (_offers_text(s.get("top", [])) or "(aucune)"))
         except agents.AgentError as e:
             state = f"(agent emploi : {e})"
-    recent_user = " ".join(m["content"] for m in past if m["role"] == "user")[-1500:]
-    plan = llm.ask_json(ROUTER.format(
-        memory=contexte.memoire(message + " " + recent_user, FIL_ESPACE[_fil.get()]) or "(rien pour l'instant)",
-        agents="\n".join(f"- {a.key} ({a.name}) : {a.description} — "
-                         f"{'disponible' if a.configured else 'NON CONFIGURÉ'}" for a in (emploi, perso, agents.Instagram())),
-        emploi=state,
-        dev_state="disponible" if dev.configured() else "NON CONFIGURÉ : variable DEV_GITHUB_TOKEN manquante",
-        depots="\n".join(f"- {k} : {v}" for k, v in dev.depots().items()),
-        question=question["question"] if question else "(aucune)",
-        attachment=(f"{file['name']} ({'image' if files.is_image(file) else 'document'})" if file else "(aucune)"),
-        history=contexte.conversation(_fil.get(), HISTORY),
-        message=message), model=model)
+    # Contexte allégé avant l'appel (curateur.py : filtre, déduplication, budget de l'agent), sans appel au modèle
+    ctx = curateur.preparer("chef", message, past, _fil.get(), FIL_ESPACE[_fil.get()], state, ROUTER)
+    with llm.suivi("chef", ctx["taille"], ctx["brut"]):
+        plan = llm.ask_json(ROUTER.format(
+            memory=ctx["memoire"] or "(rien pour l'instant)",
+            agents="\n".join(f"- {a.key} ({a.name}) : {a.description} — "
+                             f"{'disponible' if a.configured else 'NON CONFIGURÉ'}" for a in (emploi, perso, agents.Instagram())),
+            emploi=state,
+            dev_state="disponible" if dev.configured() else "NON CONFIGURÉ : variable DEV_GITHUB_TOKEN manquante",
+            depots="\n".join(f"- {k} : {v}" for k, v in dev.depots().items()),
+            question=question["question"] if question else "(aucune)",
+            attachment=(f"{file['name']} ({'image' if files.is_image(file) else 'document'})" if file else "(aucune)"),
+            history=ctx["historique"],
+            message=message), model=model)
+    curateur.marquer_utilises_plus_tard(ctx["ids"])
     if not isinstance(plan, dict):
         raise llm.LLMError("Réponse du modèle mal formée, réessaie.")
     action, agent_used = plan.get("action"), ""
@@ -583,6 +587,7 @@ def _chat(message, file=None, model=None):
     _save("user", shown)
     _save("assistant", answer, agent_used)
     contexte.resumer_plus_tard(_fil.get())
+    curateur.distiller_plus_tard(_fil.get())   # après la réponse : faits atomiques, jamais avant
     facts = [str(x).strip() for x in (plan.get("a_retenir") or []) if str(x).strip()][:5]
     if facts:
         memory.add_event("chef", "conversation", "La personne a dit :\n" + "\n".join("- " + f for f in facts))
@@ -619,6 +624,13 @@ def _morning():
     learned = memory.process_pending()
     if learned:
         lines.append(f"Mémoire : {learned} souvenir(s) mis à jour.")
+    try:   # compaction de la mémoire (modèle économique) et hygiène : au point du matin, hors de toute réponse
+        bilan = curateur.compacter_tout(list(FILS))
+        if any(bilan[k] for k in ("faits", "fusions", "archives")):
+            lines.append(f"Curateur : {bilan['faits']} fait(s) distillé(s), {bilan['fusions']} doublon(s) fusionné(s), "
+                         f"{bilan['archives']} souvenir(s) archivé(s).")
+    except Exception as e:
+        print(f"Curateur : compaction reportée ({e!r})", flush=True)
     text = "\n\n".join(lines)
     db.kv_set("briefing", json.dumps({"date": today, "text": text}, ensure_ascii=False))
     _save("assistant", f"Point du matin ({today})\n\n{text}", "chef", fil="general")

@@ -21,6 +21,22 @@ RETRY_DELAY = 30  # secondes entre deux essais
 EMPLOI_RETRIES = 6
 
 
+# Budget de contexte (en jetons) transmis au modèle pour chaque agent, réglable sans toucher au code :
+# variable BUDGET_TOKENS_<CLÉ> (ex. BUDGET_TOKENS_CHEF=6000). Appliqué par curateur.py.
+BUDGETS_TOKENS = {"chef": 4000, "emploi": 3000, "perso": 1000, "instagram": 1500}
+BUDGET_MINIMUM = 500
+
+
+def budget_tokens(key):
+    """Budget de jetons de l'agent : variable d'environnement, sinon valeur par défaut (jamais sous le minimum)."""
+    defaut = BUDGETS_TOKENS.get(key, 2000)
+    try:
+        valeur = int(os.getenv(f"BUDGET_TOKENS_{str(key).upper()}") or defaut)
+    except ValueError:
+        valeur = defaut
+    return max(BUDGET_MINIMUM, valeur)
+
+
 def _call_retry(*args, retries=3, **kwargs):
     """Comme _call, mais réessaie après une erreur passagère. À réserver aux appels sans écriture."""
     for attempt in range(retries + 1):

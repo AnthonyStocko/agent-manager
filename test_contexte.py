@@ -14,6 +14,7 @@ os.environ.pop("DATABASE_URL", None)
 import app  # noqa: E402
 import chef  # noqa: E402
 import contexte  # noqa: E402
+import curateur  # noqa: E402
 import db  # noqa: E402
 import memory  # noqa: E402
 
@@ -25,9 +26,10 @@ class Base(unittest.TestCase):
         db.init()
         for t in ("memories", "memory_log", "events", "messages", "kv"):
             db.run(f"DELETE FROM {t}")
-        p = mock.patch.object(contexte, "resumer_plus_tard", lambda fil: None)
-        p.start()
-        self.addCleanup(p.stop)
+        for cible, nom in ((contexte, "resumer_plus_tard"), (curateur, "distiller_plus_tard")):
+            p = mock.patch.object(cible, nom, lambda fil: None)
+            p.start()
+            self.addCleanup(p.stop)
 
     def chat(self, message, fil="general", plan=REPONDRE):
         with mock.patch.object(chef.llm, "ask_json", return_value=plan) as appel:
